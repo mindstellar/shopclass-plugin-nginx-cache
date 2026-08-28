@@ -90,15 +90,22 @@ rather than a sample to adapt. The same config is in
 | Preference (`nginx_cache` section) | Default |
 |---|---|
 | `purge_endpoint` | `$SHOPCLASS_PURGE_ENDPOINT`, else `<nginx's scheme>://127.0.0.1/purge` |
-| `purge_host` | `$SHOPCLASS_PURGE_HOST`, else the site's host and port |
+| `purge_host` | `$SHOPCLASS_PURGE_HOST`, else the site's host and port. One per line — see below |
 | `ttl_item`, `ttl_page`, `ttl_aggregate` | 3600, capped at 3600 |
 
 Both halves of the endpoint matter and neither is obvious: the request must reach the
 origin **and** present the host and scheme the cache key was built with. **Test purge**
-proves that combination rather than trusting it — it primes an entry the way a visitor
-does and then removes it with the configured settings, so a host or scheme that names
-nothing real fails instead of quietly verifying itself. Changing either setting closes the
+proves that combination rather than trusting it, and changing either setting closes the
 gate again.
+
+**List every hostname the site answers on.** nginx files a separate copy of each page
+under each `Host` it was asked with, so a name left out goes on serving what it already
+had for the whole window — `www.example.com` when the site is configured as
+`example.com`, an alias, a staging domain. Test purge primes and purges each one in turn,
+because priming with `Host: X` files an entry under X and can therefore prove it. The one
+thing it cannot prove is that those names are what visitors send, so it requires the
+site's own host to be among them: a list of typos would otherwise verify itself perfectly
+and purge nothing anybody reads.
 
 The 3600 cap is not arbitrary. A cached page carries the CSRF token minted when it was
 stored, and core stops accepting one 7200s after it was issued — so a longer window has

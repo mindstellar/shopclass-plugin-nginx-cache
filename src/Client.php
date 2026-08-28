@@ -45,26 +45,62 @@ class Client
     private const TIMEOUT = 3;
 
     /**
-     * Purge each URL, queueing whatever could not be delivered.
+     * Purge each URL under every configured host, queueing whatever could not be
+     * delivered.
+     *
+     * A site reachable at more than one name has an entry per name -- nginx keys on the
+     * Host it was asked with -- so one purge per URL would leave the others serving the
+     * page they already had for the rest of the window.
      *
      * @param string[] $urls
      *
-     * @return array<string, int> url => HTTP status, 0 when the origin was unreachable
+     * @return array<string, array<string, int>> url => host => HTTP status
      */
     public static function purge(array $urls): array
     {
         $results = array();
 
         foreach ($urls as $url) {
-            $status         = self::purgeOne($url);
-            $results[$url]  = $status;
+            $statuses      = self::purgeAll($url);
+            $results[$url] = $statuses;
 
-            if (!self::isSettled($status)) {
+            // Queue the URL, not the host that failed: a retry re-sends every host, and
+            // one already purged answers 412, which counts as done.
+            if ($statuses !== array() && !self::allSettled($statuses)) {
                 Queue::add($url);
             }
         }
 
         return $results;
+    }
+
+    /**
+     * One URL, every configured host.
+     *
+     * @return array<string, int> host => HTTP status; empty when no host is configured,
+     *                            which is a plugin nobody has finished setting up
+     */
+    public static function purgeAll(string $url): array
+    {
+        $statuses = array();
+
+        foreach (Plugin::purgeHosts() as $host) {
+            $statuses[$host] = self::purgeOne($url, null, $host);
+        }
+
+        return $statuses;
+    }
+
+    /** @param array<string, int> $statuses */
+    public static function allSettled(array $statuses): bool
+    {
+        foreach ($statuses as $status) {
+            if (!self::isSettled($status)) {
+                return false;
+            }
+        }
+
+        return $statuses !== array();
     }
 
     /**
@@ -90,7 +126,9 @@ class Client
             return 0;
         }
 
-        return self::get($target, $host ?? (string) Plugin::get('purge_host'));
+        // A caller that names no host gets the first configured one. purgeAll() is what
+        // covers a site with several; this keeps a bare call from sending no Host at all.
+        return self::get($target, $host ?? (string) (Plugin::purgeHosts()[0] ?? ''));
     }
 
     /**

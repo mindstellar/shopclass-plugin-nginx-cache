@@ -56,9 +56,10 @@ class Plugin
                 getenv('SHOPCLASS_PURGE_ENDPOINT') ?: self::originScheme() . '://127.0.0.1/purge',
                 'STRING',
             ),
-            // The Host the cache key was built with. A purge presenting anything else is
-            // a different key and comes back 412 having deleted nothing. Carries the port
-            // when the site runs on one, because that is what a visitor's Host header says.
+            // The hosts cached pages are filed under -- one per line, and one is the
+            // ordinary case. A purge presenting anything else is a different key and comes
+            // back 412 having deleted nothing. The port is part of it when the site runs
+            // on one, because that is what a visitor's Host header says.
             'purge_host'     => array(getenv('SHOPCLASS_PURGE_HOST') ?: self::publicHost(), 'STRING'),
             'ttl_item'       => array('3600', 'INTEGER'),
             'ttl_page'       => array('3600', 'INTEGER'),
@@ -123,6 +124,38 @@ class Plugin
         return parse_url(osc_base_url(), PHP_URL_SCHEME) === 'https' ? 'https' : 'http';
     }
 
+    /**
+     * Every host cached pages of this site are filed under.
+     *
+     * One site is often reachable at more than one name -- with and without www, a
+     * staging alias, a proxy that passes a different Host through -- and nginx keys an
+     * entry per name. A purge names one of them, so a host missing from this list keeps
+     * serving the page it had for the whole window.
+     *
+     * Stored as one preference so nothing has to migrate; commas, spaces and newlines all
+     * separate, because people will type all three.
+     *
+     * @return string[] in the order given, without repeats
+     */
+    public static function purgeHosts(): array
+    {
+        return self::parseHosts((string) self::get('purge_host'));
+    }
+
+    /** @return string[] */
+    public static function parseHosts(string $raw): array
+    {
+        $hosts = array();
+        foreach (preg_split('/[\s,]+/', $raw) ?: array() as $host) {
+            $host = trim($host);
+            if ($host !== '' && !in_array($host, $hosts, true)) {
+                $hosts[] = $host;
+            }
+        }
+
+        return $hosts;
+    }
+
     /** Host, with the port when the site runs on a non-default one. */
     public static function publicHost(?string $baseUrl = null): string
     {
@@ -143,21 +176,21 @@ class Plugin
      * thirty-second staleness into an hour of it, so the plugin refuses to lengthen
      * anything until it has watched one round trip work.
      *
-     * The one thing it must not do is prove itself. Priming with the same Host the purge
-     * presents makes the test self-consistent and blind: a `purge_host` naming nothing a
-     * visitor ever sends would create an entry under that name, delete it again, and
-     * report success while every real purge missed. So the entry is created the way a
-     * visitor creates one -- the site's own host -- and removed with the configured
-     * settings. A mismatch between them is the failure this is here to catch.
+     * Every configured host is primed, purged and re-checked in turn, because priming
+     * with `Host: X` creates an entry keyed on X -- so each one can be proved rather than
+     * taken on trust.
+     *
+     * What that cannot prove is that those names are the ones visitors actually send: a
+     * list of typos would verify itself perfectly and purge nothing anybody reads. So one
+     * check does not come from nginx at all -- the site's own host has to be in the list.
      *
      * @return array{ok:bool, message:string}
      */
     public static function selfTest(): array
     {
         $endpoint = trim((string) self::get('purge_endpoint'));
-        $host     = trim((string) self::get('purge_host'));
 
-        if ($endpoint === '' || $host === '') {
+        if ($endpoint === '' || self::purgeHosts() === array()) {
             return self::verdict(false, __('Set the purge endpoint and host first.', 'nginx-cache'));
         }
 
@@ -180,68 +213,104 @@ class Plugin
             ));
         }
 
-        // The host a visitor's request carries, which is the host their cache entries are
-        // filed under. The purge below uses the configured one instead, on purpose.
+        // The host a visitor's request carries is the one their cached pages are filed
+        // under. Anything else in the list may well be right; this one has to be there.
         $visitorHost = self::publicHost();
         if ($visitorHost === '') {
             return self::verdict(false, __('The site has no host to test against; check its base URL.', 'nginx-cache'));
         }
 
-        $home  = osc_base_url();
-        $path  = (string) (parse_url($home, PHP_URL_PATH) ?: '/');
-        $probe = $origin . $path;
-
-        $first = Client::probe($probe, $visitorHost);
-        if ($first['status'] === 0) {
+        $hosts = self::purgeHosts();
+        if (!in_array($visitorHost, $hosts, true)) {
             return self::verdict(false, sprintf(
-                __('Could not reach %s. The purge endpoint must be an address this server can open itself, not the site\'s public URL.', 'nginx-cache'),
-                $origin
+                __('Visitors reach this site as "%1$s", which is not in the host list (%2$s) — so the pages they are served would never be purged. Add it.', 'nginx-cache'),
+                $visitorHost,
+                implode(', ', $hosts)
             ));
         }
+
+        foreach ($hosts as $host) {
+            $failure = self::testOneHost($origin, $host);
+            if ($failure !== '') {
+                return self::verdict(false, $failure);
+            }
+        }
+
+        return self::verdict(true, count($hosts) === 1
+            ? __('Purge confirmed: the page was cached, purged, and re-rendered. Longer cache windows are now in use.', 'nginx-cache')
+            : sprintf(
+                __('Purge confirmed on all %d hosts: each cached the page, purged it, and re-rendered. Longer cache windows are now in use.', 'nginx-cache'),
+                count($hosts)
+            ));
+    }
+
+    /**
+     * Prime, purge and re-check the home page as one host sees it.
+     *
+     * Priming with `Host: X` files an entry under X, so this proves the round trip for
+     * that host rather than assuming it from another one working.
+     *
+     * @return string the failure, or '' when this host is good
+     */
+    private static function testOneHost(string $origin, string $host): string
+    {
+        $home  = osc_base_url();
+        $probe = $origin . (string) (parse_url($home, PHP_URL_PATH) ?: '/');
+        $named = count(self::purgeHosts()) > 1 ? sprintf(__(' (host: %s)', 'nginx-cache'), $host) : '';
+
+        $first = Client::probe($probe, $host);
+        if ($first['status'] === 0) {
+            return sprintf(
+                __('Could not reach %s. The purge endpoint must be an address this server can open itself, not the site\'s public URL.', 'nginx-cache'),
+                $origin
+            );
+        }
         if ($first['status'] !== 200) {
-            return self::verdict(false, sprintf(
+            return sprintf(
                 __('%1$s answered HTTP %2$d for the home page. Check that %3$s names a server block on that address.', 'nginx-cache'),
                 $probe,
                 $first['status'],
-                $visitorHost
-            ));
+                $host
+            );
         }
         if ($first['cache'] === '') {
-            return self::verdict(false, __('nginx is not sending X-Cache, so it is not caching this site yet. Add the caching stanza from the Setup page.', 'nginx-cache'));
+            return __('nginx is not sending X-Cache, so it is not caching this site yet. Add the caching stanza from the Setup page.', 'nginx-cache');
         }
 
-        $second = Client::probe($probe, $visitorHost);
+        $second = Client::probe($probe, $host);
         if (!self::isHeld($second['cache'])) {
-            return self::verdict(false, sprintf(
-                __('The home page was not held in the cache (X-Cache: %s), so there is nothing for a purge to remove.', 'nginx-cache'),
-                $second['cache'] !== '' ? $second['cache'] : '-'
-            ));
+            return sprintf(
+                __('The home page was not held in the cache (X-Cache: %1$s), so there is nothing for a purge to remove.%2$s', 'nginx-cache'),
+                $second['cache'] !== '' ? $second['cache'] : '-',
+                $named
+            );
         }
 
-        $status = Client::purgeOne($home, $endpoint, $host);
+        $status = Client::purgeOne($home, null, $host);
         if ($status === Client::NOT_CACHED) {
-            return self::verdict(false, sprintf(
-                __('The purge reached nginx but matched no entry: the page is filed under "%1$s" and the purge asked for "%2$s". Set the host to %1$s.', 'nginx-cache'),
-                $visitorHost,
+            return sprintf(
+                __('The purge reached nginx but matched no entry for "%s". The key it built differs from the one holding the page — check the endpoint\'s scheme against the Setup page.', 'nginx-cache'),
                 $host
-            ));
+            );
         }
         if ($status !== 200) {
-            return self::verdict(false, sprintf(
-                __('The purge returned HTTP %d. A 404 there means the purge location is not in the nginx config; see the Setup page.', 'nginx-cache'),
-                $status
-            ));
+            return sprintf(
+                __('The purge returned HTTP %1$d. A 404 there means the purge location is not in the nginx config; see the Setup page.%2$s', 'nginx-cache'),
+                $status,
+                $named
+            );
         }
 
-        $third = Client::probe($probe, $visitorHost);
+        $third = Client::probe($probe, $host);
         if (self::isHeld($third['cache'])) {
-            return self::verdict(false, sprintf(
-                __('The purge reported success but the page is still being served from the cache (X-Cache: %s).', 'nginx-cache'),
-                $third['cache']
-            ));
+            return sprintf(
+                __('The purge reported success but the page is still being served from the cache (X-Cache: %1$s).%2$s', 'nginx-cache'),
+                $third['cache'],
+                $named
+            );
         }
 
-        return self::verdict(true, __('Purge confirmed: the page was cached, purged, and re-rendered. Longer cache windows are now in use.', 'nginx-cache'));
+        return '';
     }
 
     /**
@@ -301,7 +370,10 @@ class Plugin
     private static function persistSettings(): void
     {
         $endpoint = trim(Params::getParamString('purge_endpoint'));
-        $host     = trim(Params::getParamString('purge_host'));
+
+        // Normalised on the way in, so re-ordering whitespace is not a change and does
+        // not close the gate, while adding or removing a host is and does.
+        $host = implode("\n", self::parseHosts(Params::getParamString('purge_host')));
 
         // A verdict belongs to the settings it was reached with. Change where the purge
         // goes or what it names, and the last one says nothing about the new ones -- so

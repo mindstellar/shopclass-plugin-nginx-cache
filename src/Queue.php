@@ -85,9 +85,10 @@ class Queue
                 continue;
             }
 
-            // purgeOne, not purge: this is the retry path, and Client::purge would put
-            // a still-failing URL straight back into the queue it just came out of.
-            if (Client::isSettled(Client::purgeOne($url))) {
+            // purgeAll, not purge: this is the retry path, and Client::purge would put a
+            // still-failing URL straight back into the queue it just came out of. Every
+            // host is re-sent; one already purged answers 412, which counts as done.
+            if (Client::allSettled(Client::purgeAll($url))) {
                 continue;
             }
 

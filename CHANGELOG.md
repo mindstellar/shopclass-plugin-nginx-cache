@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+### New
+- The purge host is a list: a site answering on several names has each one purged, and
+  Test purge proves each in turn.
+
+### Fixed
+- A site whose visitors arrive on a name other than the configured one — `www`, an alias,
+  a proxy passing a different Host — verified against a host nobody uses while every real
+  cached page went unpurged.
+
 ## 0.3.0
 
 ### New

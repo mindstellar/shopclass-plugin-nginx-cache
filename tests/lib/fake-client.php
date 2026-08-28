@@ -18,7 +18,7 @@ class Client
     /** @var string[] */
     public static $calls = array();
 
-    /** @var array<string, int> url => status to answer with */
+    /** @var array<string, int> url => status, or "host|url" => status to answer per host */
     public static $answers = array();
 
     /** @var array<int, array{target:string, host:string}> every probe, in order */
@@ -40,7 +40,7 @@ class Client
         self::$calls[]      = $url;
         self::$purgeHosts[] = (string) $host;
 
-        return self::$answers[$url] ?? 0;
+        return self::$answers[$host . '|' . $url] ?? self::$answers[$url] ?? 0;
     }
 
     /** @return array{status:int, cache:string} */
@@ -54,6 +54,29 @@ class Client
     public static function reset(): void
     {
         self::$calls = self::$answers = self::$probeCalls = self::$probes = self::$purgeHosts = array();
+    }
+
+    /** @return array<string, int> host => status, the same shape the real client returns */
+    public static function purgeAll(string $url): array
+    {
+        $statuses = array();
+        foreach (Plugin::purgeHosts() as $host) {
+            $statuses[$host] = self::purgeOne($url, null, $host);
+        }
+
+        return $statuses;
+    }
+
+    /** @param array<string, int> $statuses */
+    public static function allSettled(array $statuses): bool
+    {
+        foreach ($statuses as $status) {
+            if (!self::isSettled($status)) {
+                return false;
+            }
+        }
+
+        return $statuses !== array();
     }
 
     /** Never called from the retry path — calling it there would re-queue a failure. */

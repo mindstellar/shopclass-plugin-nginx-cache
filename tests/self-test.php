@@ -103,26 +103,58 @@ $r = run(array($miss, $hit, array('status' => 200, 'cache' => 'UPDATING')));
 check('a page still refreshing after the purge is a failure', !$r['ok'], $r['message']);
 check('...saying what nginx answered', strpos($r['message'], 'UPDATING') !== false, $r['message']);
 
-harness_section('it primes as a visitor, and purges as configured');
+harness_section('every host in the list is proved on its own');
 
-/* The whole point. If both used purge_host, a host naming nothing real would create an
-   entry under that name, delete it again, and report success — while every purge a real
-   change triggers went on missing. */
-run($good, 200, array('purge_endpoint' => 'http://127.0.0.1/purge', 'purge_host' => 'something.else'));
-$primeHosts = array_unique(array_column(Client::$probeCalls, 'host'));
-pin('every GET carries the host visitors send', array('shop.example:8000'), array_values($primeHosts));
-pin('the purge carries the configured one', array('something.else'), Client::$purgeHosts);
-
-harness_section('...so a host nothing is filed under fails');
-
-$r = run(array($miss, $hit), 412, array(
+/* nginx files a copy of every page under each Host it was asked with, and priming with
+   `Host: X` creates an entry keyed on X — so each name can be proved rather than assumed
+   from another one working. */
+$r = run(array($miss, $hit, $miss, $miss, $hit, $miss), 200, array(
     'purge_endpoint' => 'http://127.0.0.1/purge',
-    'purge_host'     => 'wrong.example',
+    'purge_host'     => "shop.example:8000\nwww.shop.example:8000",
+));
+check('two hosts, both confirmed', $r['ok'], $r['message']);
+check('...and it says how many', strpos($r['message'], '2 hosts') !== false, $r['message']);
+pin('each was primed and re-checked under its own name', array(
+    'shop.example:8000', 'shop.example:8000', 'shop.example:8000',
+    'www.shop.example:8000', 'www.shop.example:8000', 'www.shop.example:8000',
+), array_column(Client::$probeCalls, 'host'));
+pin('and purged under its own name', array('shop.example:8000', 'www.shop.example:8000'), Client::$purgeHosts);
+
+/* A second host that is not caching is a failure even though the first one worked --
+   otherwise the list would be a way of hiding hosts nothing purges. */
+$r = run(array($miss, $hit, $miss, $miss, $miss), 200, array(
+    'purge_endpoint' => 'http://127.0.0.1/purge',
+    'purge_host'     => "shop.example:8000\nwww.shop.example:8000",
+));
+check('one bad host fails the lot', !$r['ok']);
+check('...naming which one', strpos($r['message'], 'www.shop.example:8000') !== false, $r['message']);
+
+harness_section('...but the list still has to name what visitors send');
+
+/* The one thing priming cannot prove. A list of names nobody uses would verify itself
+   perfectly and purge nothing anybody reads, so this check does not come from nginx: the
+   site's own host has to be in the list. */
+$r = run($good, 200, array(
+    'purge_endpoint' => 'http://127.0.0.1/purge',
+    'purge_host'     => 'something.else',
 ));
 check('it fails', !$r['ok']);
-check('...naming what the page is filed under', strpos($r['message'], 'shop.example:8000') !== false, $r['message']);
-check('...and what was asked for', strpos($r['message'], 'wrong.example') !== false, $r['message']);
+check('...naming the host visitors use', strpos($r['message'], 'shop.example:8000') !== false, $r['message']);
+check('...and what was listed instead', strpos($r['message'], 'something.else') !== false, $r['message']);
+pin('...before spending a request on it', 0, count(Client::$probeCalls));
 pin('...and the gate stays shut', '0', $GLOBALS['prefs']['nginx_cache']['verified']);
+
+harness_section('a list is one value, however it is typed');
+
+foreach (array(
+    "shop.example:8000\nwww.shop.example:8000" => 'newlines',
+    'shop.example:8000, www.shop.example:8000'  => 'commas',
+    ' shop.example:8000   www.shop.example:8000 ' => 'spaces',
+    "shop.example:8000,,\n shop.example:8000 \nwww.shop.example:8000" => 'repeats and blanks',
+) as $raw => $how) {
+    pin('parsed by ' . $how, array('shop.example:8000', 'www.shop.example:8000'), Plugin::parseHosts($raw));
+}
+pin('nothing at all', array(), Plugin::parseHosts('   '));
 
 harness_section('the scheme is in the key too, and cannot be tested the same way');
 

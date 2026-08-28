@@ -32,6 +32,7 @@ function osc_set_preference($key, $value = '', $section = 'osclass', $type = 'ST
 
 $GLOBALS['prefs'] = array('nginx_cache' => array(
     'ttl_item' => '3600', 'ttl_page' => '3600', 'ttl_aggregate' => '7200',
+    'purge_host' => 'shop.example',
 ));
 $GLOBALS['writes'] = array();
 
@@ -48,8 +49,7 @@ use mindstellar\nginxcache\Queue;
 function seed(array $entries): void
 {
     $GLOBALS['prefs']['nginx_cache']['queue'] = $entries === array() ? '' : json_encode($entries);
-    Client::$calls   = array();
-    Client::$answers = array();
+    Client::reset();
     $GLOBALS['writes'] = array();
 }
 
@@ -100,6 +100,34 @@ check('so is one nginx never held', !isset($left['https://example.test/nocopy'])
 check('one the origin refused stays for the next tick', isset($left['https://example.test/down']));
 check('and it is not re-queued as a second entry', count($left) === 1, json_encode($left));
 check('the batch path is never used from a retry', !in_array('PURGE-BATCH', Client::$calls, true));
+
+harness_section('a site on more than one hostname');
+
+/* nginx files a copy of every page under each Host it was asked with, so an entry is
+   only done when every one of them has been told. Re-sending a host that already
+   succeeded is free: it answers 412, which counts as settled. */
+$GLOBALS['prefs']['nginx_cache']['purge_host'] = "shop.example\nwww.shop.example";
+
+seed(array('https://shop.example/a' => $now - 10));
+Client::$answers = array(
+    'shop.example|https://shop.example/a'     => 200,
+    'www.shop.example|https://shop.example/a' => 0,
+);
+Queue::retry();
+pin('both hosts are tried', 2, count(Client::$calls));
+pin('...and named', array('shop.example', 'www.shop.example'), Client::$purgeHosts);
+check('one host still failing keeps the entry', isset(Queue::load()['https://shop.example/a']));
+
+seed(array('https://shop.example/a' => $now - 10));
+Client::$answers = array(
+    'shop.example|https://shop.example/a'     => 200,
+    // Already purged on the earlier attempt; re-sending it is free and counts as done.
+    'www.shop.example|https://shop.example/a' => 412,
+);
+Queue::retry();
+pin('every host settled, so it is done', 0, count(Queue::load()));
+
+$GLOBALS['prefs']['nginx_cache']['purge_host'] = 'shop.example';
 
 harness_section('an entry older than the window it protects');
 

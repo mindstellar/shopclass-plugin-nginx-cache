@@ -88,13 +88,12 @@ $selfUrl   = osc_route_admin_url('nginx-cache-settings');
         </div>
 
         <div class="mb-1">
-          <label class="form-label" for="ngxc-host"><?php echo $e(__('Host header', 'nginx-cache')); ?></label>
-          <input class="form-control" id="ngxc-host" type="text" name="purge_host"
-                 value="<?php echo $e((string) Plugin::get('purge_host')); ?>"
-                 placeholder="<?php echo $e($suggested['host']); ?>" />
+          <label class="form-label" for="ngxc-host"><?php echo $e(__('Host headers', 'nginx-cache')); ?></label>
+          <textarea class="form-control" id="ngxc-host" name="purge_host" rows="<?php echo max(2, count(Plugin::purgeHosts())); ?>"
+                    placeholder="<?php echo $e($suggested['host']); ?>"><?php echo $e(implode("\n", Plugin::purgeHosts())); ?></textarea>
           <div class="form-text">
             <?php echo $e(sprintf(
-                __('The host visitors send, port included — it is part of the cache key, so anything else purges nothing and reports success. Suggested: %s', 'nginx-cache'),
+                __('Every hostname visitors reach this site on, one per line, port included. Each is a separate set of cached pages, so a name missing here keeps serving what it already had. %s must be among them.', 'nginx-cache'),
                 $suggested['host']
             )); ?>
           </div>

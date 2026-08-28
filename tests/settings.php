@@ -171,6 +171,18 @@ submit(form('save', array('purge_host' => 'shop.example:8080')));
 pin('a new host closes it too', '0', pref('verified'));
 
 stored();
+submit(form('save', array('purge_host' => "shop.example\nwww.shop.example")));
+pin('adding a host closes it, because that host has never been proved', '0', pref('verified'));
+pin('...and the list is stored one per line', "shop.example\nwww.shop.example", pref('purge_host'));
+
+/* Normalised before it is compared, so retyping the same hosts with different separators
+   is not a change and does not send someone back to the Test purge button. */
+stored(array('purge_host' => "shop.example\nwww.shop.example"));
+submit(form('save', array('purge_host' => ' shop.example ,  www.shop.example ')));
+pin('the same hosts typed differently are not a change', '1', pref('verified'));
+pin('...and are stored the same way', "shop.example\nwww.shop.example", pref('purge_host'));
+
+stored();
 submit(form('save', array('ttl_item' => '900')));
 pin('but a window is not a reason to re-test', '1', pref('verified'));
 

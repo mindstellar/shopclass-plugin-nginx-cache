@@ -111,8 +111,11 @@ $step = static function ($n, $title, $lead, $code) use ($e) {
           <code class="ngxc-v"><?php echo $e($suggested['endpoint']); ?></code><br />
           <?php echo $e(__('Where PHP and nginx are separate containers, this is the nginx service name instead of the loopback — for example http://webserver/purge.', 'nginx-cache')); ?>
         </dd>
-        <dt><?php echo $e(__('Host header', 'nginx-cache')); ?></dt>
-        <dd><code class="ngxc-v"><?php echo $e($suggested['host']); ?></code></dd>
+        <dt><?php echo $e(__('Host headers', 'nginx-cache')); ?></dt>
+        <dd>
+          <code class="ngxc-v"><?php echo $e($suggested['host']); ?></code><br />
+          <?php echo $e(__('One per line. If the site also answers on another name — with or without www, an alias, a staging domain — list those too: nginx files a separate copy of every page under each, and a name left out goes on serving what it already had.', 'nginx-cache')); ?>
+        </dd>
       </dl>
       <a class="btn btn-primary btn-sm" href="<?php echo $e(osc_route_admin_url('nginx-cache-settings')); ?>">
         <?php echo $e(__('Go to settings', 'nginx-cache')); ?>
