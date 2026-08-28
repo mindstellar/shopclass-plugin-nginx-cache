@@ -11,7 +11,8 @@ the moment a listing changes.
 
 Shopclass sets `Cache-Control: public, s-maxage=30` on public pages, and nginx honours it.
 Thirty seconds is short because nothing can invalidate an entry — time is the only
-eviction. That means one visitor per URL per thirty seconds pays a full PHP render.
+eviction. That means the origin re-renders every URL every thirty seconds for as long as
+anyone is looking at it.
 
 This plugin lengthens the window and takes responsibility for correctness instead: when a
 listing changes, the pages showing it are purged immediately.
