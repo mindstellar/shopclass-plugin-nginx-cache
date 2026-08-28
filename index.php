@@ -3,7 +3,7 @@
 Plugin Name: nginx Cache
 Plugin URI: https://github.com/mindstellar/shopclass-plugin-nginx-cache
 Description: Hold pages in nginx's FastCGI cache for an hour instead of thirty seconds, and purge them the moment a listing changes — including after a storage offload rewrites its image URLs.
-Version: 0.2.0
+Version: 0.3.0
 Author: Mindstellar Community
 Author URI: https://mindstellar.com
 Short Name: nginx-cache
@@ -37,6 +37,7 @@ require_once __DIR__ . '/src/Ttl.php';
 require_once __DIR__ . '/src/Purge.php';
 require_once __DIR__ . '/src/Client.php';
 require_once __DIR__ . '/src/Queue.php';
+require_once __DIR__ . '/src/Setup.php';
 
 osc_register_plugin(osc_plugin_path(__FILE__), array(Plugin::class, 'install'));
 osc_add_hook(osc_plugin_path(__FILE__) . '_uninstall', array(Plugin::class, 'uninstall'));

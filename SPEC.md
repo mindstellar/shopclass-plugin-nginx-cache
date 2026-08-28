@@ -321,9 +321,15 @@ all.
 
 ## 10. Phasing
 
-**Status:** 1 and 2 are done; the plugin is verified end to end against nginx 1.31.3 with
+**Status:** 1 to 3 are done; the plugin is verified end to end against nginx 1.31.3 with
 `ngx_cache_purge` (prime → HIT → purge → MISS, on a listing and its three aggregates, plus
-the queue filling on a refused origin and draining on retry). 3 to 5 remain.
+the queue filling on a refused origin and draining on retry), and both admin pages are
+driven in a browser. 4 and 5 remain — the image and the docs page.
+
+Two things the admin work changed: the TTL ceiling is enforced at 3600 rather than warned
+about (§5.5), and the self-test treats STALE/UPDATING/EXPIRED as "the page is cached" —
+requiring HIT failed the test whenever it happened to run while an entry was refreshing
+behind a request, which is a false alarm on the one control that switches the feature on.
 
 1. **Core: the one hook.** Independently useful — it is what lets the *existing* Cloudflare
    plugin notice a storage offload, which it cannot today. Ships in core, no plugin needed.

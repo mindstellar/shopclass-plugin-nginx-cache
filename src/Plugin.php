@@ -7,6 +7,8 @@
 
 namespace mindstellar\nginxcache;
 
+use Params;
+
 if (!defined('ABS_PATH')) {
     exit('Direct access is not allowed.');
 }
@@ -18,6 +20,20 @@ if (!defined('ABS_PATH')) {
 class Plugin
 {
     public const SECTION = 'nginx_cache';
+
+    /**
+     * The longest window any tier may be set to.
+     *
+     * Not a round number picked for comfort: a cached page carries the CSRF token minted
+     * when it was cached, and core stops accepting a token 7200s after it was issued.
+     * Bucketing means the token can already be up to 1800s old when the page is stored,
+     * a page held for T seconds is handed out up to T seconds after that, and the visitor
+     * then takes some time to fill the form in. 1800 + 3600 + a half-hour to write a
+     * message still lands inside 7200; anything longer starts answering "your session has
+     * expired" to people contacting sellers, and the purge self-test cannot see it,
+     * because purging keeps working perfectly while the forms quietly do not.
+     */
+    public const TTL_MAX = 3600;
 
     /**
      * Defaults. Env vars come first so the bundled Docker image comes up configured
@@ -195,7 +211,7 @@ class Plugin
         }
 
         $second = Client::probe($probe, $visitorHost);
-        if ($second['cache'] !== 'HIT') {
+        if (!self::isHeld($second['cache'])) {
             return self::verdict(false, sprintf(
                 __('The home page was not held in the cache (X-Cache: %s), so there is nothing for a purge to remove.', 'nginx-cache'),
                 $second['cache'] !== '' ? $second['cache'] : '-'
@@ -218,11 +234,28 @@ class Plugin
         }
 
         $third = Client::probe($probe, $visitorHost);
-        if ($third['cache'] === 'HIT') {
-            return self::verdict(false, __('The purge reported success but the page is still being served from the cache.', 'nginx-cache'));
+        if (self::isHeld($third['cache'])) {
+            return self::verdict(false, sprintf(
+                __('The purge reported success but the page is still being served from the cache (X-Cache: %s).', 'nginx-cache'),
+                $third['cache']
+            ));
         }
 
         return self::verdict(true, __('Purge confirmed: the page was cached, purged, and re-rendered. Longer cache windows are now in use.', 'nginx-cache'));
+    }
+
+    /**
+     * Whether nginx says it has an entry for this page.
+     *
+     * Not just HIT. An entry past its window is served stale while it refreshes behind
+     * the request -- STALE, then UPDATING -- and one being revalidated says EXPIRED. All
+     * of those are entries a purge has something to remove; only MISS and BYPASS are not.
+     * Requiring HIT made the test fail whenever it happened to run during a refresh, which
+     * is a false alarm on the one control that decides whether any of this is switched on.
+     */
+    private static function isHeld(string $cache): bool
+    {
+        return !in_array($cache, array('', 'MISS', 'BYPASS'), true);
     }
 
     /** Whether nginx told us its scheme, rather than us having guessed at it. */
@@ -255,9 +288,95 @@ class Plugin
         return array('ok' => $ok, 'message' => $message);
     }
 
+    /**
+     * A window a tier may actually be given: never negative, never past what the token in
+     * the page survives. Zero is allowed and means "leave this tier on core's own window".
+     */
+    public static function clampTtl(int $seconds): int
+    {
+        return max(0, min($seconds, self::TTL_MAX));
+    }
+
+    /** Every button saves the form first, so a test runs against what is on screen. */
+    private static function persistSettings(): void
+    {
+        $endpoint = trim(Params::getParamString('purge_endpoint'));
+        $host     = trim(Params::getParamString('purge_host'));
+
+        // A verdict belongs to the settings it was reached with. Change where the purge
+        // goes or what it names, and the last one says nothing about the new ones -- so
+        // the gate closes and the longer windows stop until the test is run again.
+        if ($endpoint !== (string) self::get('purge_endpoint') || $host !== (string) self::get('purge_host')) {
+            osc_set_preference('verified', '0', self::SECTION, 'BOOLEAN');
+            osc_set_preference('last_test', '', self::SECTION);
+        }
+
+        osc_set_preference('purge_endpoint', $endpoint, self::SECTION, 'STRING');
+        osc_set_preference('purge_host', $host, self::SECTION, 'STRING');
+
+        foreach (array('ttl_item', 'ttl_page', 'ttl_aggregate') as $key) {
+            osc_set_preference($key, (string) self::clampTtl(Params::getParamInt($key)), self::SECTION, 'INTEGER');
+        }
+
+        osc_reset_preferences();
+    }
+
+    /** Whether anything on the form asked for a window longer than one can be given. */
+    private static function askedForTooLong(): bool
+    {
+        foreach (array('ttl_item', 'ttl_page', 'ttl_aggregate') as $key) {
+            if (Params::getParamInt($key) > self::TTL_MAX) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static function handleAdminPost(): void
     {
-        // TODO(phase 3): save settings, run selfTest(), clear `verified` when
-        // purge_endpoint or purge_host changes.
+        $action = Params::getParamString('nginx_cache_action');
+        if ($action === '') {
+            return;
+        }
+        osc_csrf_check();
+
+        $tooLong = self::askedForTooLong();
+        self::persistSettings();
+
+        if ($tooLong) {
+            osc_add_flash_warning_message(sprintf(
+                __('Windows were shortened to %d seconds. Past that the security token cached inside a page outlives itself, and every form on it — contact seller, report, comment — starts answering "your session has expired".', 'nginx-cache'),
+                self::TTL_MAX
+            ), 'admin');
+        }
+
+        switch ($action) {
+            case 'save':
+                osc_add_flash_ok_message(__('Settings saved.', 'nginx-cache'), 'admin');
+                break;
+
+            case 'test':
+                $result = self::selfTest();
+                if ($result['ok']) {
+                    osc_add_flash_ok_message($result['message'], 'admin');
+                } else {
+                    osc_add_flash_error_message($result['message'], 'admin');
+                }
+                break;
+
+            case 'retry_queue':
+                $before = count(Queue::load());
+                Queue::retry();
+                $after = count(Queue::load());
+                osc_add_flash_ok_message(sprintf(
+                    __('%1$d of %2$d queued purges delivered.', 'nginx-cache'),
+                    $before - $after,
+                    $before
+                ), 'admin');
+                break;
+        }
+
+        osc_redirect_to(osc_route_admin_url('nginx-cache-settings'));
     }
 }

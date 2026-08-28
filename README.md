@@ -3,10 +3,10 @@
 Hold pages in nginx's FastCGI cache for an hour instead of thirty seconds, and purge them
 the moment a listing changes.
 
-> **Status: works, no admin UI yet.** Purging, the URL set, the retry queue and the
-> self-test are implemented and verified end to end against nginx 1.31.3 with
-> `ngx_cache_purge`. The settings and setup pages are still stubs, so configuration is by
-> preference (`nginx_cache` section) for now.
+> **Status: complete as a plugin.** Purging, the URL set, the retry queue, the self-test
+> and both admin pages work, verified end to end against nginx 1.31.3 with
+> `ngx_cache_purge`. What is left is packaging: the Docker image that carries the module,
+> and a catalogue entry.
 
 ## What it is for
 
@@ -82,20 +82,29 @@ off the same core hooks and share no code. Run either or both.
 
 ## Configuration
 
-The nginx side is in [`nginx/shopclass-cache.conf`](nginx/shopclass-cache.conf) — the
-config the self-test was verified against.
+Two pages under **Plugins**: the settings, and a **Setup** page that prints the nginx
+configuration this install needs — its own host, its own scheme, its own nginx version —
+rather than a sample to adapt. The same config is in
+[`nginx/shopclass-cache.conf`](nginx/shopclass-cache.conf) for reading outside the admin.
 
 | Preference (`nginx_cache` section) | Default |
 |---|---|
 | `purge_endpoint` | `$SHOPCLASS_PURGE_ENDPOINT`, else `<nginx's scheme>://127.0.0.1/purge` |
 | `purge_host` | `$SHOPCLASS_PURGE_HOST`, else the site's host and port |
-| `ttl_item`, `ttl_page`, `ttl_aggregate` | 3600 |
+| `ttl_item`, `ttl_page`, `ttl_aggregate` | 3600, capped at 3600 |
 
 Both halves of the endpoint matter and neither is obvious: the request must reach the
-origin **and** present the host and scheme the cache key was built with. The self-test
+origin **and** present the host and scheme the cache key was built with. **Test purge**
 proves that combination rather than trusting it — it primes an entry the way a visitor
 does and then removes it with the configured settings, so a host or scheme that names
-nothing real fails instead of quietly verifying itself.
+nothing real fails instead of quietly verifying itself. Changing either setting closes the
+gate again.
+
+The 3600 cap is not arbitrary. A cached page carries the CSRF token minted when it was
+stored, and core stops accepting one 7200s after it was issued — so a longer window has
+forms on cached pages answering "your session has expired" while purging goes on working
+perfectly. Going past it means taking the token out of the HTML, which is a decision about
+requiring JavaScript to submit forms, not a caching setting.
 
 ## Tests
 

@@ -21,6 +21,15 @@ class Client
     /** @var array<string, int> url => status to answer with */
     public static $answers = array();
 
+    /** @var array<int, array{target:string, host:string}> every probe, in order */
+    public static $probeCalls = array();
+
+    /** @var array<int, array{status:int, cache:string}> answers to hand back, in order */
+    public static $probes = array();
+
+    /** @var string[] the Host each purge presented */
+    public static $purgeHosts = array();
+
     public static function isSettled(int $status): bool
     {
         return $status === 200 || $status === self::NOT_CACHED;
@@ -28,9 +37,23 @@ class Client
 
     public static function purgeOne(string $url, ?string $endpoint = null, ?string $host = null): int
     {
-        self::$calls[] = $url;
+        self::$calls[]      = $url;
+        self::$purgeHosts[] = (string) $host;
 
         return self::$answers[$url] ?? 0;
+    }
+
+    /** @return array{status:int, cache:string} */
+    public static function probe(string $target, string $host): array
+    {
+        self::$probeCalls[] = array('target' => $target, 'host' => $host);
+
+        return array_shift(self::$probes) ?: array('status' => 0, 'cache' => '');
+    }
+
+    public static function reset(): void
+    {
+        self::$calls = self::$answers = self::$probeCalls = self::$probes = self::$purgeHosts = array();
     }
 
     /** Never called from the retry path — calling it there would re-queue a failure. */
