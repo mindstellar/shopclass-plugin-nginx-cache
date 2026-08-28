@@ -7,6 +7,9 @@
 
 namespace mindstellar\nginxcache;
 
+use Item;
+use Page;
+
 if (!defined('ABS_PATH')) {
     exit('Direct access is not allowed.');
 }
@@ -39,8 +42,10 @@ class Purge
     /** @param int $itemId a bare id — the state-change hooks and invalidate_item_cache */
     public static function onItemId($itemId): void
     {
-        // TODO(phase 2): load the item and delegate to onItemArray(). A deleted listing
-        // will not load; that path is onItemDeleted().
+        $item = self::loadItem((int) $itemId);
+        if ($item !== null) {
+            self::collect(self::itemUrls($item));
+        }
     }
 
     /**
@@ -49,18 +54,39 @@ class Purge
      */
     public static function onItemDeleted($itemId, $item = null): void
     {
-        // TODO(phase 2): the item is gone, so its URLs must come from the snapshot the
-        // hook carries rather than a lookup.
+        if (is_array($item) && !empty($item['pk_i_id'])) {
+            self::collect(self::itemUrls($item));
+
+            return;
+        }
+
+        // No snapshot: the row is gone, so the friendly URL -- which is built from the
+        // title, the city and the category path -- can no longer be reconstructed. The
+        // aggregates and the non-friendly URL still can.
+        $id = (int) $itemId;
+        if ($id > 0) {
+            self::collect(array(osc_base_url(), osc_item_url_ns($id)));
+        }
     }
 
     public static function onCategory($categoryId): void
     {
-        // TODO(phase 2)
+        $id = (int) $categoryId;
+        if ($id <= 0) {
+            return;
+        }
+
+        self::collect(array(osc_base_url(), osc_search_url(array('sCategory' => $id))));
     }
 
     public static function onPage($pageId): void
     {
-        // TODO(phase 2)
+        $id = (int) $pageId;
+        if ($id <= 0) {
+            return;
+        }
+
+        self::collect(array_merge(array(osc_base_url()), self::pageUrls($id)));
     }
 
     /**
@@ -75,13 +101,99 @@ class Purge
      */
     public static function itemUrls(array $item): array
     {
-        $urls = array();
+        $urls   = array(osc_base_url());
+        $itemId = (int) ($item['pk_i_id'] ?? 0);
+        $catId  = (int) ($item['fk_i_category_id'] ?? 0);
+        $userId = (int) ($item['fk_i_user_id'] ?? 0);
 
-        // TODO(phase 2): canonical URL + locale variants + homepage, category and
-        // seller profile, with osc_item_url_ns() as the fallback when the title is
-        // missing. `?comments-page=N` variants are not enumerable and stay uncovered.
+        if ($catId > 0) {
+            $urls[] = osc_search_url(array('sCategory' => $catId));
+        }
+        if ($userId > 0) {
+            $urls[] = osc_user_public_profile_url($userId);
+        }
+
+        if ($itemId <= 0) {
+            // A row that did not load. Its aggregates are still worth purging; a URL
+            // built from an id of 0 is not.
+            return (array) osc_apply_filter('nginx_cache_item_urls', $urls, $item);
+        }
+
+        if (!empty($item['s_title']) && is_string($item['s_title'])) {
+            $urls[] = osc_item_url_from_item($item);
+
+            // A locale prefix is only in the permalink when there is more than one
+            // locale to distinguish; with one, the prefixed URL is not a page anyone
+            // requests and purging it would just be a round trip for a 412.
+            $locales = self::locales();
+            if (count($locales) > 1) {
+                foreach ($locales as $locale) {
+                    $urls[] = osc_item_url_from_item($item, $locale);
+                }
+            }
+        } else {
+            $urls[] = osc_item_url_ns($itemId);
+        }
 
         return (array) osc_apply_filter('nginx_cache_item_urls', $urls, $item);
+    }
+
+    /**
+     * A static page's own URLs, rebuilt from the row rather than from loop context.
+     *
+     * @return string[]
+     */
+    private static function pageUrls(int $id): array
+    {
+        $page = Page::newInstance()->findByPrimaryKey($id);
+        if (!$page || empty($page['pk_i_id'])) {
+            return array();
+        }
+
+        if (!osc_rewrite_enabled()) {
+            return array(osc_base_url(true) . '?page=page&id=' . $id);
+        }
+
+        $slug = urlencode((string) ($page['s_internal_name'] ?? ''));
+        $tail = str_replace(
+            array('{PAGE_ID}', '{PAGE_SLUG}', '{PAGE_TITLE}'),
+            array((string) $id, $slug, $slug),
+            (string) osc_get_preference('rewrite_page_url')
+        );
+
+        $urls    = array(osc_base_url() . $tail);
+        $locales = self::locales();
+        if (count($locales) > 1) {
+            foreach ($locales as $locale) {
+                $urls[] = osc_base_url() . $locale . '/' . $tail;
+            }
+        }
+
+        return $urls;
+    }
+
+    private static function loadItem(int $id): ?array
+    {
+        if ($id <= 0) {
+            return null;
+        }
+
+        $item = Item::newInstance()->findByPrimaryKey($id);
+
+        return (is_array($item) && $item !== array()) ? $item : null;
+    }
+
+    /** @return string[] enabled locale codes */
+    private static function locales(): array
+    {
+        $out = array();
+        foreach (osc_get_locales() as $locale) {
+            if (!empty($locale['pk_c_code'])) {
+                $out[] = (string) $locale['pk_c_code'];
+            }
+        }
+
+        return $out;
     }
 
     /** @param string[] $urls */

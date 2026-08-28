@@ -3,9 +3,10 @@
 Hold pages in nginx's FastCGI cache for an hour instead of thirty seconds, and purge them
 the moment a listing changes.
 
-> **Status: scaffold.** The structure, hook wiring and configuration are in place; the
-> purge transport, URL building and admin pages are not yet implemented. Not installable
-> as a working plugin yet.
+> **Status: works, no admin UI yet.** Purging, the URL set, the retry queue and the
+> self-test are implemented and verified end to end against nginx 1.31.3 with
+> `ngx_cache_purge`. The settings and setup pages are still stubs, so configuration is by
+> preference (`nginx_cache` section) for now.
 
 ## What it is for
 
@@ -46,10 +47,18 @@ clears whenever the endpoint or host changes.
 Purged, because their URLs can be named: the listing itself and one per locale, the
 homepage, the listing's category page, and the seller's public profile.
 
-Not purged, and so left on core's short window: **search results carrying parameters**.
-Every keyword, filter, sort and page number is its own cache entry and the set cannot be
-enumerated — and a newly posted listing has to appear in them. Also uncovered:
-`?comments-page=N` variants of a listing.
+Not purged, and so left on core's short window:
+
+- **search results carrying parameters** — every keyword, filter, sort and page number is
+  its own cache entry, the set cannot be enumerated, and a newly posted listing has to
+  appear in them;
+- **any URL with a query string**, including `?comments-page=2` on a listing and
+  `?utm_source=…` on the home page. Each is a separate cache entry that no purge names;
+- **every page, if permalinks are off**, since the canonical URL of each is then a query
+  URL itself.
+
+The rule behind all three: a page is held longer only when the URL being served is the one
+a purge will name.
 
 ## Events it listens to
 
@@ -70,6 +79,27 @@ plugin has too.
 
 They compose. `shopclass-plugin-cloudflare` owns the edge; this owns the origin. Both hang
 off the same core hooks and share no code. Run either or both.
+
+## Configuration
+
+The nginx side is in [`nginx/shopclass-cache.conf`](nginx/shopclass-cache.conf) — the
+config the self-test was verified against.
+
+| Preference (`nginx_cache` section) | Default |
+|---|---|
+| `purge_endpoint` | `$SHOPCLASS_PURGE_ENDPOINT`, else `<nginx's scheme>://127.0.0.1/purge` |
+| `purge_host` | `$SHOPCLASS_PURGE_HOST`, else the site's host and port |
+| `ttl_item`, `ttl_page`, `ttl_aggregate` | 3600 |
+
+Both halves of the endpoint matter and neither is obvious: the request must reach the
+origin **and** present the host and scheme the cache key was built with. The self-test
+proves that combination rather than trusting it — it primes an entry the way a visitor
+does and then removes it with the configured settings, so a host or scheme that names
+nothing real fails instead of quietly verifying itself.
+
+## Tests
+
+`./tests/run.sh` — standalone, no database and no running site.
 
 ## Extending
 

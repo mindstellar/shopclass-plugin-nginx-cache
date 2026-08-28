@@ -138,6 +138,8 @@ with arbitrary parameters cannot be enumerated.
 | Item pages, static pages | 3600 | nameable, and change rarely |
 | Home, category, user profile | 3600 | nameable — purged on every post/edit/delete, as the CF plugin already does |
 | Search with parameters | 30s (core default, untouched) | every keyword, filter, sort and page number is its own entry; not enumerable |
+| **Any URL with a query string** | 30s | added after implementation: `/?utm_source=x` is the home page by every helper core has, and `?comments-page=2` is the listing, but each is its own entry that no purge names. Page type is not enough — the URL has to be the one a purge will name |
+| **Everything, with permalinks off** | 30s | the canonical URL of each page is then a query URL itself, indistinguishable from the row above without matching parameter order against a rebuilt URL |
 
 **Default 3600, not 86400.** A day maximises the saving, but the damage from a purge gap
 nobody notices scales with it, and this is a first release against a module we have run for
@@ -181,7 +183,15 @@ staleness instead of 30 seconds. So:
 > The plugin serves core's default TTL unless a purge self-test has passed.
 
 The admin page has a **Test purge** button that primes a known URL, purges it, and checks
-the entry is gone. Its result is stored; the TTL filter returns the raised value only when
+the entry is gone.
+
+**It must not prime with the host it purges with.** Doing so makes the test self-consistent
+and blind: a `purge_host` naming something no visitor ever sends creates an entry under
+that name, deletes it again, and reports success while every real purge misses. So the
+entry is created the way a visitor creates one — the site's own host — and removed with
+the configured settings. The scheme has the same problem and cannot be tested the same way,
+because the prime is forced to use the endpoint's; it is checked instead against
+`REQUEST_SCHEME`, which is nginx's own `$scheme` for real traffic. Its result is stored; the TTL filter returns the raised value only when
 that flag is set, and the flag is cleared whenever the endpoint or host setting changes.
 A misconfigured install therefore behaves exactly as it does today rather than worse.
 
@@ -214,6 +224,49 @@ protects.** Retrying on `cron_hourly` against a 3600s window means the entry usu
 expires on its own before the retry fires, which makes the fallback pointless. Hang it on
 the generic `cron` hook (auto-cron fires at most every five minutes) rather than the hourly
 tier.
+
+### 5.5 An embedded CSRF token caps the window
+
+A cached page carries the token minted when it was cached, and a token stops being accepted
+`Csrf::TOKEN_LIFETIME` (7200s) after it was issued. So a page held for T seconds hands out
+tokens up to T seconds old, and **every form on it fails once T approaches 7200** — contact
+seller, report listing, comment — with "Your session has expired, please reload the page".
+
+That is a hard ceiling on this whole design, and it is why the default is 3600 rather than
+the day this began as: at 86400 the token is expired for twenty-two hours out of every
+twenty-four. The self-test in §5.3 does not catch it, because purging works perfectly while
+the forms quietly do not.
+
+Two things follow:
+
+- **`ttl_item` / `ttl_page` / `ttl_aggregate` must stay meaningfully below 7200.** The admin
+  page should refuse a larger value, or warn in terms of what breaks rather than a number.
+- **Going past it requires taking the token out of the HTML** — fetched by JavaScript after
+  render, so the page itself is token-free and cacheable indefinitely.
+
+Note the tokens are already bucketed onto `Csrf::ISSUE_BUCKET`, which is what makes two
+renders of a page identical. That helps the validator, not the ceiling: it changes the
+granularity of issue, not the lifetime.
+
+### 5.6 What a JavaScript token would cost
+
+It is the only route past §5.5, and the objection to it is narrower than it first appears:
+a form already protected by a captcha needs JavaScript to submit at all, so moving its
+token to JavaScript costs that form nothing.
+
+But that is a per-site, per-form condition, not a property of the software:
+
+- captcha is **off by default** and gated on `osc_captcha_enabled()`, with per-form switches
+  (`osc_recaptcha_items_enabled`, `_comments_`, `_reports_`) — three forms, opt-in;
+- the **item contact form**, send-to-friend, register and login have no per-form switch at
+  all, so on a site with captcha off they are plain HTML forms that would stop working
+  without JavaScript. On a classifieds site, contact-seller is the form the site exists for.
+
+So the decision can be made per response — token in the HTML when the response is not
+cacheable or the form has no captcha, fetched otherwise — but that couples the cache window
+to an unrelated setting, and someone will be surprised by it. If long windows are wanted,
+the honest framing is that the site requires JavaScript to submit forms, decided on its own
+merits rather than arrived at as a caching side effect.
 
 ## 6. Configuration
 
@@ -267,6 +320,10 @@ all.
   silently with a 412 that nothing surfaces.
 
 ## 10. Phasing
+
+**Status:** 1 and 2 are done; the plugin is verified end to end against nginx 1.31.3 with
+`ngx_cache_purge` (prime → HIT → purge → MISS, on a listing and its three aggregates, plus
+the queue filling on a refused origin and draining on retry). 3 to 5 remain.
 
 1. **Core: the one hook.** Independently useful — it is what lets the *existing* Cloudflare
    plugin notice a storage offload, which it cannot today. Ships in core, no plugin needed.

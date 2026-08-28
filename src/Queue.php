@@ -22,17 +22,44 @@ if (!defined('ABS_PATH')) {
  * mid-request, a refused connection -- because dropping those would leave a page wrong for
  * a whole hour rather than the thirty seconds it would have been without the plugin.
  *
- * Sized accordingly: a bounded list, not a work pipeline. It deliberately does not copy
- * StorageQueue's worker locking, eight-step backoff or dead-letter ceiling -- one outage
- * produces a handful of URLs, and a purge older than the longest configured TTL has
- * nothing left to purge.
+ * Sized accordingly: a bounded list in one preference row, not a work pipeline. It
+ * deliberately does not copy StorageQueue's worker locking, eight-step backoff or
+ * dead-letter ceiling -- one outage produces a handful of URLs, and a purge older than the
+ * longest configured TTL has nothing left to purge.
  */
 class Queue
 {
+    /** Enough for any plausible outage. Past it the oldest entry is dropped. */
+    public const CAP = 100;
+
+    public const KEY = 'queue';
+
+    /**
+     * Two requests failing at the same moment can overwrite each other's entry here.
+     * That is accepted rather than locked around: the loss is one retry of one URL whose
+     * page expires on its own within the hour, and the alternative is a lock on the write
+     * path of every listing save to protect a case that only arises while the origin is
+     * already refusing connections.
+     */
     public static function add(string $url): void
     {
-        // TODO(phase 2): append to a bounded store, dropping the oldest past a cap so a
-        // long outage cannot grow it without limit.
+        if ($url === '') {
+            return;
+        }
+
+        $entries = self::load();
+
+        // Keep the first failure's timestamp: age is measured from when the page went
+        // wrong, not from the last attempt to fix it.
+        if (!isset($entries[$url])) {
+            $entries[$url] = time();
+        }
+
+        if (count($entries) > self::CAP) {
+            $entries = array_slice($entries, -self::CAP, null, true);
+        }
+
+        self::save($entries);
     }
 
     /**
@@ -43,7 +70,70 @@ class Queue
      */
     public static function retry(): void
     {
-        // TODO(phase 2): drain through Client::purge(), dropping entries that succeed or
-        // come back 412, and discarding anything already older than the longest TTL.
+        $entries = self::load();
+        if ($entries === array()) {
+            return;
+        }
+
+        $cutoff = time() - self::maxAge();
+        $keep   = array();
+
+        foreach ($entries as $url => $failedAt) {
+            // Older than the longest window the plugin hands out: whatever was cached
+            // when this failed has expired on its own, so there is nothing to purge.
+            if ($failedAt < $cutoff) {
+                continue;
+            }
+
+            // purgeOne, not purge: this is the retry path, and Client::purge would put
+            // a still-failing URL straight back into the queue it just came out of.
+            if (Client::isSettled(Client::purgeOne($url))) {
+                continue;
+            }
+
+            $keep[$url] = $failedAt;
+        }
+
+        self::save($keep);
+    }
+
+    /** @return array<string, int> url => unix time of the first failure */
+    public static function load(): array
+    {
+        $raw = (string) Plugin::get(self::KEY);
+        if ($raw === '') {
+            return array();
+        }
+
+        $entries = json_decode($raw, true);
+        if (!is_array($entries)) {
+            return array();
+        }
+
+        $out = array();
+        foreach ($entries as $url => $failedAt) {
+            if (is_string($url) && $url !== '' && is_numeric($failedAt)) {
+                $out[$url] = (int) $failedAt;
+            }
+        }
+
+        return $out;
+    }
+
+    /** @param array<string, int> $entries */
+    private static function save(array $entries): void
+    {
+        osc_set_preference(self::KEY, $entries === array() ? '' : (string) json_encode($entries), Plugin::SECTION);
+    }
+
+    /** The longest window the plugin will hand out; past it an entry has expired anyway. */
+    private static function maxAge(): int
+    {
+        return max(
+            (int) Plugin::get('ttl_item'),
+            (int) Plugin::get('ttl_page'),
+            (int) Plugin::get('ttl_aggregate'),
+            60
+        );
     }
 }
