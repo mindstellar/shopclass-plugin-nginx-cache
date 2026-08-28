@@ -1,0 +1,13 @@
+{
+  "$schema": "../schema/package.schema.json",
+  "slug": "nginx-cache",
+  "type": "plugin",
+  "categories": ["performance"],
+  "tags": ["nginx", "cache", "purge", "performance", "fastcgi"],
+  "short_description": "Hold pages in nginx's FastCGI cache for an hour instead of thirty seconds, and purge them the moment a listing changes.",
+  "license": "GPL-3.0-or-later",
+  "support": {
+    "issues": "https://github.com/mindstellar/shopclass-plugin-nginx-cache/issues",
+    "docs": "https://github.com/mindstellar/shopclass-plugin-nginx-cache#readme"
+  }
+}
