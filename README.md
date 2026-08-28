@@ -16,10 +16,10 @@ eviction. That means one visitor per URL per thirty seconds pays a full PHP rend
 This plugin lengthens the window and takes responsibility for correctness instead: when a
 listing changes, the pages showing it are purged immediately.
 
-Measured on a dev harness, an entry expiring is served by rendering it again
-(`X-Cache: EXPIRED`), not by serving stale — `background_update` only serves stale while
-*another* request is already refreshing. So the saving is real origin CPU, roughly 120×
-fewer renders per URL at the default hour.
+What it does **not** buy is page speed: with `use_stale updating` + `background_update on`,
+an expiring entry is already served stale in under a millisecond while it refreshes behind
+the request. The saving is origin renders — one per URL per hour instead of one per thirty
+seconds.
 
 ## What it requires
 

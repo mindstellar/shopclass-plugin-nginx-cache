@@ -20,12 +20,21 @@ its old title for a day, and a newly posted one missing from the homepage for a 
 
 Measured on the dev harness, not assumed:
 
-- A request arriving after expiry renders synchronously — `X-Cache: EXPIRED`, not `STALE`.
-  `fastcgi_cache_use_stale updating` + `background_update on` only serve stale while
-  *another* request is already refreshing. So at 30s, **one visitor per URL per 30 seconds
-  pays a full PHP render**. At a day, one per day. On a long tail of listings that is the
-  saving, and it is larger than "the site feels faster" — user-facing latency is mostly
-  unchanged, origin CPU is not.
+- With the reference config, an expiring entry is **served stale while it refreshes behind
+  the request** — `X-Cache: STALE`, then `UPDATING`, both answered in well under a
+  millisecond. `fastcgi_cache_use_stale updating` + `background_update on` do what they say.
+  Reproduced on a controlled probe and on a real listing page, with and without
+  `must-revalidate`, and with and without `fastcgi_cache_valid`.
+
+  (An earlier run of this measurement reported `EXPIRED` and a synchronous re-render. It
+  did not reproduce in four subsequent runs and no config difference accounts for it, so it
+  is treated as unreliable rather than explained away.)
+
+  So the saving from a longer window is **origin renders, not visitor latency** — visitors
+  already get cache-speed responses at either setting. One background re-render per URL per
+  hour instead of per thirty seconds is the whole benefit, and on a long tail of listings
+  that is real but it is CPU, not page speed. Worth being honest about when justifying the
+  work.
 - nginx honours the app's `s-maxage` over `fastcgi_cache_valid`. An entry expired after 35s
   with `fastcgi_cache_valid 200 1d` set. **The TTL is app-controlled**, so raising it is a
   filter, not an nginx change.
