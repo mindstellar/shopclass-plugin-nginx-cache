@@ -56,7 +56,12 @@ class Plugin
 
     public static function uninstall(): void
     {
-        osc_delete_preference(self::SECTION);
+        // Key first, section second. Passing the section alone deletes a preference
+        // named after it in the 'osclass' section -- which exists nowhere, so the
+        // uninstall reports success and leaves every setting behind.
+        foreach (array_keys(self::defaults()) as $key) {
+            osc_delete_preference($key, self::SECTION);
+        }
     }
 
     /** @return string */

@@ -25,6 +25,7 @@ Support URI: https://github.com/mindstellar/shopclass-plugin-nginx-cache/issues
 
 use mindstellar\nginxcache\Plugin;
 use mindstellar\nginxcache\Purge;
+use mindstellar\nginxcache\Queue;
 use mindstellar\nginxcache\Ttl;
 
 if (!defined('ABS_PATH')) {
@@ -102,8 +103,10 @@ osc_add_hook('edit_page', array(Purge::class, 'onPage'));
 osc_add_hook('after_delete_page', array(Purge::class, 'onPage'));
 
 // One request may fire several of the hooks above for the same listing. Collect the
-// URLs, de-duplicate, and send once the response is out of the way.
-osc_add_hook('shutdown_functions', array(Purge::class, 'registerFlush'));
+// URLs, de-duplicate, and send once the response is out of the way. This is a filter,
+// not a hook -- core builds the shutdown list with applyFilter (see Csrf::init), and
+// registering it the other way silently never runs.
+osc_add_filter('shutdown_functions', array(Purge::class, 'registerFlush'));
 
 // Anything the origin refused or could not be told about is retried, rather than
 // left as a page that stays wrong until its hour is up.
