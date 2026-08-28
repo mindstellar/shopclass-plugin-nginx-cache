@@ -176,6 +176,36 @@ the entry is gone. Its result is stored; the TTL filter returns the raised value
 that flag is set, and the flag is cleared whenever the endpoint or host setting changes.
 A misconfigured install therefore behaves exactly as it does today rather than worse.
 
+### 5.4 Immediate is the mechanism; the queue is only a fallback
+
+**A purge is sent synchronously, in the request that changed the content.** That is the
+whole feature — a listing edit is visible on the next request, not on the next cron tick.
+Nothing about correctness may depend on a scheduler.
+
+The URLs are collected through the request and sent once at shutdown, which is coalescing,
+not deferral: one save can fire several of the hooks in §3.1 for the same listing, and each
+would otherwise be its own round trip. The send still happens in that same request, before
+the process ends.
+
+It is cheap enough to do inline. The endpoint is the loopback origin, a purge is a bare
+HTTP request with no body, and a listing produces a handful of them — single-digit
+milliseconds against a save that already writes rows and processes images. Blocking the
+response for that is the right trade: it guarantees the entry is gone before the seller's
+next request, and the seller bypasses the cache anyway (`oc_cache_bypass`), so nobody is
+waiting on it to see their own change.
+
+**The queue catches only what that attempt could not deliver** — the origin down, a reload
+mid-request, a refused connection. It is a fallback, and it should be sized like one: a
+bounded list, retried on the next cron tick. It does not need `StorageQueue`'s worker
+locking, eight-step exponential backoff or dead-letter ceiling, because it is not a work
+pipeline; it is a short list of things that briefly failed.
+
+One consequence to get right: **the retry must run more often than the shortest TTL it
+protects.** Retrying on `cron_hourly` against a 3600s window means the entry usually
+expires on its own before the retry fires, which makes the fallback pointless. Hang it on
+the generic `cron` hook (auto-cron fires at most every five minutes) rather than the hourly
+tier.
+
 ## 6. Configuration
 
 Preferences under section `nginx_cache`:
@@ -203,6 +233,7 @@ they keep today's behaviour.
 | module absent (`unknown directive`) | nginx will not start, so this is caught at deploy, not runtime; the help page says so |
 | multi-domain install | one purge per configured host; out of scope for v1, documented as a limitation |
 | purge storm on bulk edit | coalesce per request — collect URLs, de-duplicate, send once at shutdown |
+| origin refused or unreachable | queue for retry (§5.4); the page is wrong until then, which is the cost of the longer window |
 
 ## 8. Core changes required
 

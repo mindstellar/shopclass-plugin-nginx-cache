@@ -108,6 +108,8 @@ osc_add_hook('after_delete_page', array(Purge::class, 'onPage'));
 // registering it the other way silently never runs.
 osc_add_filter('shutdown_functions', array(Purge::class, 'registerFlush'));
 
-// Anything the origin refused or could not be told about is retried, rather than
-// left as a page that stays wrong until its hour is up.
-osc_add_hook('cron_hourly', array(Queue::class, 'retry'));
+// Fallback only -- purging itself is immediate, in the request that changed the
+// content. This just picks up whatever the origin refused or was not reachable for.
+// The generic `cron` hook, not `cron_hourly`: a retry has to come round more often
+// than the window it protects, and the default window is an hour.
+osc_add_hook('cron', array(Queue::class, 'retry'));
