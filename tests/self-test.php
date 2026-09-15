@@ -1,7 +1,7 @@
 <?php
 /*
  * This file is part of the nginx Cache plugin for Shopclass.
- * Copyright (c) 2021-2026 Mindstellar Community
+ * Copyright (c) 2021-2026 Navjot Tomer (Mindstellar) and contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

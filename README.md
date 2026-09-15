@@ -126,4 +126,4 @@ requiring JavaScript to submit forms, not a caching setting.
 
 ## Licence
 
-GPL-3.0-or-later. © Mindstellar Community.
+GPL-3.0-or-later. © Navjot Tomer (Mindstellar) and contributors.
