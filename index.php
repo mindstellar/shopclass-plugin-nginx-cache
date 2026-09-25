@@ -3,12 +3,12 @@
 Plugin Name: nginx Cache
 Plugin URI: https://github.com/mindstellar/shopclass-plugin-nginx-cache
 Description: Hold pages in nginx's FastCGI cache for an hour instead of thirty seconds, and purge them the moment a listing changes — including after a storage offload rewrites its image URLs.
-Version: 0.4.0
+Version: 0.4.1
 Author: Navjot Tomer (Mindstellar)
 Author URI: https://mindstellar.com
 Short Name: nginx-cache
 Requires Shopclass: 6.2.0
-Tested up to: 6.2
+Tested up to: 6.4
 Requires PHP: 8.0
 Support URI: https://github.com/mindstellar/shopclass-plugin-nginx-cache/issues
 */
