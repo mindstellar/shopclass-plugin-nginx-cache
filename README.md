@@ -3,10 +3,15 @@
 Hold pages in nginx's FastCGI cache for an hour instead of thirty seconds, and purge them
 the moment a listing changes.
 
-> **Status: complete as a plugin.** Purging, the URL set, the retry queue, the self-test
-> and both admin pages work, verified end to end against nginx 1.31.3 with
-> `ngx_cache_purge`. What is left is packaging: the Docker image that carries the module,
-> and a catalogue entry.
+![nginx Cache settings in the Shopclass admin](assets/screenshot-1.png)
+
+Verified end to end against nginx 1.31.3 with `ngx_cache_purge`.
+
+## Install
+
+From the admin: **Plugins → Manage plugins → Browse**, find *nginx Cache*, then **Install**.
+Or: `php oc-cli.php market:install nginx-cache`. Needs Shopclass 6.2.0 or later (tested up
+to 6.4).
 
 ## What it is for
 
@@ -70,10 +75,7 @@ plus one more:
 `item_expiration_updated`, `add_category`, `after_delete_category`, `edit_page`,
 `after_delete_page`, and **`invalidate_item_cache`**.
 
-That last one (Shopclass 6.2.0+) is what carries a completed **storage offload**. An
-offload rewrites a listing's image URLs and fires nothing else, so without it a cached page
-goes on pointing at local files that have been moved to the remote — a gap the Cloudflare
-plugin has too.
+The last one (6.2.0+) fires when a storage offload moves a listing's images.
 
 ## Relationship to the Cloudflare plugin
 
@@ -107,15 +109,8 @@ thing it cannot prove is that those names are what visitors send, so it requires
 site's own host to be among them: a list of typos would otherwise verify itself perfectly
 and purge nothing anybody reads.
 
-The 3600 cap is not arbitrary. A cached page carries the CSRF token minted when it was
-stored, and core stops accepting one 7200s after it was issued — so a longer window has
-forms on cached pages answering "your session has expired" while purging goes on working
-perfectly. Going past it means taking the token out of the HTML, which is a decision about
-requiring JavaScript to submit forms, not a caching setting.
-
-## Tests
-
-`./tests/run.sh` — standalone, no database and no running site.
+Times are capped at 3600 seconds. Past that, the form token in a cached page can expire
+before a visitor submits the form.
 
 ## Extending
 
