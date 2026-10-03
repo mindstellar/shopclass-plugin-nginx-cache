@@ -3,20 +3,20 @@
 Hold pages in nginx's FastCGI cache for an hour instead of thirty seconds, and purge them
 the moment a listing changes.
 
-![nginx Cache settings in the Shopclass admin](assets/screenshot-1.png)
+![nginx Cache settings in the ShopClass admin](assets/screenshot-1.png)
 
 Verified end to end against nginx 1.31.3 with `ngx_cache_purge`.
 
 ## Install
 
 From the admin: **Plugins → Manage plugins → Browse**, find *nginx Cache*, then **Install**.
-Or: `php oc-cli.php market:install nginx-cache`. Needs Shopclass 6.2.0 or later (tested up
+Or: `php oc-cli.php market:install nginx-cache`. Needs ShopClass 6.2.0 or later (tested up
 to 6.4).
 
 ## What it is for
 
-Shopclass sets `Cache-Control: public, s-maxage=30` on public pages, and nginx honours it.
-Thirty seconds is short because nothing can invalidate an entry — time is the only
+ShopClass sets `Cache-Control: public, s-maxage=30` on public pages, and nginx honours it.
+Thirty seconds is short because nothing can invalidate an entry, so time is the only
 eviction. That means the origin re-renders every URL every thirty seconds for as long as
 anyone is looking at it.
 
@@ -25,7 +25,7 @@ listing changes, the pages showing it are purged immediately.
 
 What it does **not** buy is page speed: with `use_stale updating` + `background_update on`,
 an expiring entry is already served stale in under a millisecond while it refreshes behind
-the request. The saving is origin renders — one per URL per hour instead of one per thirty
+the request. The saving is origin renders: one per URL per hour instead of one per thirty
 seconds.
 
 ## What it requires
@@ -36,15 +36,15 @@ Dockerfile, which is stock nginx plus one module rather than a switch to OpenRes
 plugin's **Setup** page prints the Dockerfile, the `load_module` line and the purge
 `location` block for this install.
 
-The bundled Shopclass Docker image ships it preconfigured. A standalone install adds it by
+The bundled ShopClass Docker image ships it preconfigured. A standalone install adds it by
 hand.
 
 ## Safety
 
 The longer window is **gated on a self-test**. Until the plugin has primed a URL, purged
 it, and confirmed the entry is gone, it serves core's own thirty seconds. A long window
-with a purge that quietly does not work is worse than no plugin at all — the failure is
-invisible and lasts an hour — so it is not something the plugin will do on trust. The flag
+with a purge that quietly does not work is worse than no plugin at all. The failure is
+invisible and lasts an hour, so it is not something the plugin will do on trust. The flag
 clears whenever the endpoint or host changes.
 
 ## What it purges, and what it does not
@@ -54,7 +54,7 @@ homepage, the listing's category page, and the seller's public profile.
 
 Not purged, and so left on core's short window:
 
-- **search results carrying parameters** — every keyword, filter, sort and page number is
+- **search results carrying parameters**: every keyword, filter, sort and page number is
   its own cache entry, the set cannot be enumerated, and a newly posted listing has to
   appear in them;
 - **any URL with a query string**, including `?comments-page=2` on a listing and
@@ -85,14 +85,14 @@ off the same core hooks and share no code. Run either or both.
 ## Configuration
 
 Two pages under **Plugins**: the settings, and a **Setup** page that prints the nginx
-configuration this install needs — its own host, its own scheme, its own nginx version —
+configuration this install needs (its own host, its own scheme, its own nginx version)
 rather than a sample to adapt. The same config is in
 [`nginx/shopclass-cache.conf`](nginx/shopclass-cache.conf) for reading outside the admin.
 
 | Preference (`nginx_cache` section) | Default |
 |---|---|
 | `purge_endpoint` | `$SHOPCLASS_PURGE_ENDPOINT`, else `<nginx's scheme>://127.0.0.1/purge` |
-| `purge_host` | `$SHOPCLASS_PURGE_HOST`, else the site's host and port. One per line — see below |
+| `purge_host` | `$SHOPCLASS_PURGE_HOST`, else the site's host and port. One per line, see below |
 | `ttl_item`, `ttl_page`, `ttl_aggregate` | 3600, capped at 3600 |
 
 Both halves of the endpoint matter and neither is obvious: the request must reach the
@@ -102,7 +102,7 @@ gate again.
 
 **List every hostname the site answers on.** nginx files a separate copy of each page
 under each `Host` it was asked with, so a name left out goes on serving what it already
-had for the whole window — `www.example.com` when the site is configured as
+had for the whole window: `www.example.com` when the site is configured as
 `example.com`, an alias, a staging domain. Test purge primes and purges each one in turn,
 because priming with `Host: X` files an entry under X and can therefore prove it. The one
 thing it cannot prove is that those names are what visitors send, so it requires the
