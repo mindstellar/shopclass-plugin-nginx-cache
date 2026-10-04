@@ -239,14 +239,36 @@ class Plugin
             }
         }
 
-        osc_set_preference('purge_all_ok', self::testPurgeAll($origin, $hosts[0]) ? '1' : '0', self::SECTION, 'BOOLEAN');
+        // Core clears the whole zone itself; probing the main server for it would only fail.
+        $purgeAllOk = Purge::coreHandlesPurgeAll() || self::testPurgeAll($origin, $hosts[0]);
+        osc_set_preference('purge_all_ok', $purgeAllOk ? '1' : '0', self::SECTION, 'BOOLEAN');
 
-        return self::verdict(true, count($hosts) === 1
+        $message = count($hosts) === 1
             ? __('Purge confirmed: the page was cached, purged, and re-rendered. Longer cache windows are now in use.', 'nginx-cache')
             : sprintf(
                 __('Purge confirmed on all %d hosts: each cached the page, purged it, and re-rendered. Longer cache windows are now in use.', 'nginx-cache'),
                 count($hosts)
-            ));
+            );
+        if (Purge::coreHandlesPurgeAll()) {
+            $message .= ' ' . __('Purge everything is handled by Shopclass, so it was not probed.', 'nginx-cache');
+        }
+
+        return self::verdict(true, $message);
+    }
+
+    /**
+     * What the settings page says about purge-everything: 'handled' (core does it),
+     * 'missing' (verified, but nginx has no purge_all line) or '' (nothing to say).
+     */
+    public static function purgeAllState(): string
+    {
+        if (Purge::coreHandlesPurgeAll()) {
+            return 'handled';
+        }
+
+        return osc_get_bool_preference('verified', self::SECTION) && !osc_get_bool_preference('purge_all_ok', self::SECTION)
+            ? 'missing'
+            : '';
     }
 
     /**
@@ -477,7 +499,11 @@ class Plugin
                 break;
 
             case 'purge_all':
-                if (Purge::onPurgeAll(array('admin'))) {
+                if (Purge::coreHandlesPurgeAll()) {
+                    // Core flushes at the end of this request and fires page_cache_purge.
+                    osc_purge_page_cache('nginx-cache');
+                    osc_add_flash_ok_message(__('Purge requested. Shopclass clears the whole cache at the end of this request.', 'nginx-cache'), 'admin');
+                } elseif (Purge::onPurgeAll(array('admin'))) {
                     osc_add_flash_ok_message(__('Everything in the cache was purged.', 'nginx-cache'), 'admin');
                 } else {
                     osc_add_flash_warning_message(__('nginx would not purge everything, so only the pages the plugin can name were purged. The rest is queued for the next cron run. Add the purge-all line from Setup.', 'nginx-cache'), 'admin');

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+
+### Fixed
+- On the Docker image (core 6.4.2+, `OSC_MICROCACHE=1`) the plugin no longer sends its own purge-everything, which always failed and left a retry queued.
+
 ## 0.5.0
 
 ### New

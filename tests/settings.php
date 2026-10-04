@@ -30,6 +30,14 @@ function osc_set_preference($key, $value = '', $section = 'osclass', $type = 'ST
 function osc_reset_preferences()
 {
 }
+function osc_get_bool_preference($key, $section = 'osclass')
+{
+    return ($GLOBALS['prefs'][$section][$key] ?? '') === '1';
+}
+function osc_purge_page_cache(string $reason = ''): void
+{
+    $GLOBALS['purgeRequested'][] = $reason;
+}
 function osc_base_url($withIndex = false)
 {
     return 'http://shop.example/';
@@ -285,6 +293,28 @@ check('the token is checked', $GLOBALS['csrfChecked'] === true);
 pin('one purge-all is sent', 1, Client::$purgeAllCalls);
 pin('it says so', 'ok', $GLOBALS['flash'][0][0] ?? '');
 pin('...and the queue it superseded is empty', array(), Queue::load());
+
+harness_section('core purges everything itself (Docker image)');
+
+$had = getenv('OSC_PAGE_CACHE_PURGE_URL');
+putenv('OSC_PAGE_CACHE_PURGE_URL');
+stored(array('purge_all_ok' => '0'));
+pin('nginx has no purge_all line: the page warns', 'missing', Plugin::purgeAllState());
+
+putenv('OSC_PAGE_CACHE_PURGE_URL=http://127.0.0.1:8089/');
+pin('core handles it: the page says so instead', 'handled', Plugin::purgeAllState());
+
+stored(array('queue' => json_encode(array('http://shop.example/a' => time()))));
+$GLOBALS['purgeRequested'] = array();
+submit(form('purge_all'));
+pin('the button asks core to purge', array('nginx-cache'), $GLOBALS['purgeRequested']);
+pin('...sends no purge of its own', array(0, array()), array(Client::$purgeAllCalls, Client::$calls));
+pin('...and says it was requested', 'ok', $GLOBALS['flash'][0][0] ?? '');
+if ($had === false) {
+    putenv('OSC_PAGE_CACHE_PURGE_URL');
+} else {
+    putenv('OSC_PAGE_CACHE_PURGE_URL=' . $had);
+}
 
 harness_section('only an administrator may use the form');
 

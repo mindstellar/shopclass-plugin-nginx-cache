@@ -71,6 +71,15 @@ class Purge
     }
 
     /**
+     * Whether core clears the whole cache itself: the Docker image 6.4.2+ with
+     * OSC_MICROCACHE=1 sends one PURGE to a loopback server that has a purge_all rule.
+     */
+    public static function coreHandlesPurgeAll(): bool
+    {
+        return function_exists('osc_purge_page_cache') && (string) getenv('OSC_PAGE_CACHE_PURGE_URL') !== '';
+    }
+
+    /**
      * Purge everything, or as much as can be named when nginx will not.
      *
      * @param array $reasons why core asked; not used, every reason gets the same purge
@@ -79,6 +88,14 @@ class Purge
      */
     public static function onPurgeAll($reasons = array()): bool
     {
+        if (self::coreHandlesPurgeAll()) {
+            // Core purges the whole zone after this hook; per-URL purges are superseded.
+            self::$pending = array();
+            Queue::clear();
+
+            return true;
+        }
+
         $status = Client::purgeEverything();
         if (Client::purgeAllSettled($status)) {
             // Everything collected this request, and everything queued, is gone with it.

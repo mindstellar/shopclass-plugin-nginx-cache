@@ -18,7 +18,7 @@ if (!defined('ABS_PATH')) {
 
 $e         = 'osc_esc_html';
 $verified  = (bool) osc_get_bool_preference('verified', Plugin::SECTION);
-$purgeAll  = (bool) osc_get_bool_preference('purge_all_ok', Plugin::SECTION);
+$purgeAll  = Plugin::purgeAllState();
 $last      = json_decode((string) Plugin::get('last_test'), true);
 $queued    = count(Queue::load());
 $suggested = Setup::suggested();
@@ -56,7 +56,11 @@ $selfUrl   = osc_route_admin_url('nginx-cache-settings');
     </div>
   <?php } ?>
 
-  <?php if ($verified && !$purgeAll) { ?>
+  <?php if ($purgeAll === 'handled') { ?>
+    <div class="alert alert-info" role="status">
+      <?php echo $e(__('Purge everything is handled by Shopclass (Docker image).', 'nginx-cache')); ?>
+    </div>
+  <?php } elseif ($purgeAll === 'missing') { ?>
     <div class="alert alert-warning" role="status">
       <?php echo $e(__('Purge everything is not configured: theme and settings changes clear only the pages the plugin can name; listings refresh within the hour. Add the line from Setup.', 'nginx-cache')); ?>
       <a href="<?php echo $e($helpUrl); ?>"><?php echo $e(__('Setup', 'nginx-cache')); ?></a>

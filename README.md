@@ -73,7 +73,11 @@ the plugin purges what it can name (home, every enabled category, static pages, 
 sitemap) and queues a purge-everything retry for the next cron run. **Purge everything
 now** on the settings page does the same by hand.
 
-On the Shopclass Docker image 6.4.2+ with `OSC_MICROCACHE=1` nothing extra is needed.
+On the Shopclass Docker image 6.4.2+ with `OSC_MICROCACHE=1`, core purges everything itself
+through `OSC_PAGE_CACHE_PURGE_URL`. The plugin's own purge-all request is skipped, no
+fallback or queued retry is made, and the `purge_all` line is not needed. **Purge
+everything now** asks core, which clears the cache at the end of the request. Older cores
+and other installs work as described above.
 
 The `purge_all` line allows `127.0.0.1` only. Where PHP runs in another container, add
 that container's address to it by hand.
@@ -124,7 +128,8 @@ proves that combination rather than trusting it, and changing either setting clo
 gate again.
 
 Test purge also proves purge-everything, and stores the result in `purge_all_ok`. That
-does not gate the longer windows; the settings page warns until it passes.
+does not gate the longer windows; the settings page warns until it passes. Where core
+handles purge-everything (Docker image), the probe is skipped and the result is set to passed.
 
 **List every hostname the site answers on.** nginx files a separate copy of each page
 under each `Host` it was asked with, so a name left out goes on serving what it already

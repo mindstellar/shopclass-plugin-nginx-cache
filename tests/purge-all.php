@@ -171,6 +171,36 @@ pin('an older core: the shim hooks as well',
     array_keys($old));
 pin('...which only ask for a purge at shutdown', array(Purge::class, 'requestPurgeAll'), $old['theme_activate']);
 
+harness_section('core purges everything itself (Docker image)');
+
+function osc_purge_page_cache(string $reason = ''): void
+{
+}
+
+$had = getenv('OSC_PAGE_CACHE_PURGE_URL');
+putenv('OSC_PAGE_CACHE_PURGE_URL');
+check('no URL in the environment: not handled by core', !Purge::coreHandlesPurgeAll());
+putenv('OSC_PAGE_CACHE_PURGE_URL=http://127.0.0.1:8089/');
+check('URL set and core function present: handled by core', Purge::coreHandlesPurgeAll());
+
+fresh(200, array(Queue::EVERYTHING => time(), 'https://example.test/old' => time()));
+Purge::collect(array('https://example.test/x'));
+check('onPurgeAll reports done', Purge::onPurgeAll(array('theme')));
+pin('...sends no purge-all', 0, Client::$purgeAllCalls);
+pin('...no fallback pages', array(), Client::$batchUrls);
+pin('...queues nothing and clears the old queue', array(), Queue::load());
+Purge::flush();
+pin('...pending URLs are superseded', array(), Client::$calls);
+
+putenv('OSC_PAGE_CACHE_PURGE_URL');
+fresh(403);
+check('without the URL it is unchanged: not cleared', !Purge::onPurgeAll(array('theme')));
+pin('...and purge-all is tried', 1, Client::$purgeAllCalls);
+check('...and queued', isset(Queue::load()[Queue::EVERYTHING]));
+if ($had !== false) {
+    putenv('OSC_PAGE_CACHE_PURGE_URL=' . $had);
+}
+
 harness_section('a PURGE that reached PHP');
 
 check('PURGE is refused', Purge::isStrayPurge('PURGE'));

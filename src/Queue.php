@@ -92,7 +92,7 @@ class Queue
             $failedAt = $entries[self::EVERYTHING];
             unset($entries[self::EVERYTHING]);
 
-            if ($failedAt >= $cutoff) {
+            if ($failedAt >= $cutoff && !Purge::coreHandlesPurgeAll()) {
                 if (Client::purgeAllSettled(Client::purgeEverything())) {
                     self::save(array());
 

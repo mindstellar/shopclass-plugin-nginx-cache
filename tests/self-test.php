@@ -46,7 +46,12 @@ $GLOBALS['prefs']   = array('nginx_cache' => array(
 
 require_once __DIR__ . '/lib/fake-client.php';
 require_once ABS_PATH . 'src/Plugin.php';
+require_once ABS_PATH . 'src/Purge.php';
 require_once __DIR__ . '/lib/harness.php';
+
+function osc_purge_page_cache(string $reason = ''): void
+{
+}
 
 use mindstellar\nginxcache\Client;
 use mindstellar\nginxcache\Plugin;
@@ -220,6 +225,21 @@ $GLOBALS['prefs']['nginx_cache']['purge_all_ok'] = '1';
 run(array($miss, $hit), 412);
 pin('a failing per-host test clears purge_all_ok', '0', $GLOBALS['prefs']['nginx_cache']['purge_all_ok']);
 pin('...without trying purge-all', 0, Client::$purgeAllCalls);
+
+harness_section('core purges everything itself (Docker image)');
+
+$had = getenv('OSC_PAGE_CACHE_PURGE_URL');
+putenv('OSC_PAGE_CACHE_PURGE_URL=http://127.0.0.1:8089/');
+$r = run($good);
+check('the test passes', $r['ok'], $r['message']);
+pin('...purge_all_ok is set without a probe', array('1', 0), array($GLOBALS['prefs']['nginx_cache']['purge_all_ok'], Client::$purgeAllCalls));
+check('...with a note saying why', strpos($r['message'], 'handled by Shopclass') !== false, $r['message']);
+pin('...and only the per-host probes ran', 3, count(Client::$probeCalls));
+if ($had === false) {
+    putenv('OSC_PAGE_CACHE_PURGE_URL');
+} else {
+    putenv('OSC_PAGE_CACHE_PURGE_URL=' . $had);
+}
 
 harness_section('a passing test after a failing one reopens the gate');
 

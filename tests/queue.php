@@ -39,7 +39,12 @@ $GLOBALS['writes'] = array();
 require_once ABS_PATH . 'src/Plugin.php';
 require_once __DIR__ . '/lib/fake-client.php';
 require_once ABS_PATH . 'src/Queue.php';
+require_once ABS_PATH . 'src/Purge.php';
 require_once __DIR__ . '/lib/harness.php';
+
+function osc_purge_page_cache(string $reason = ''): void
+{
+}
 
 
 use mindstellar\nginxcache\Client;
@@ -203,5 +208,24 @@ foreach (array('not json', '"a string"', '[1,2,3]', 'null') as $junk) {
 
 $GLOBALS['prefs']['nginx_cache']['queue'] = json_encode(array('https://example.test/ok' => 123, '' => 5, 'x' => 'later'));
 pin('only well-formed entries survive a read', array('https://example.test/ok' => 123), Queue::load());
+
+harness_section('core purges everything itself (Docker image)');
+
+$now = time();
+$had = getenv('OSC_PAGE_CACHE_PURGE_URL');
+putenv('OSC_PAGE_CACHE_PURGE_URL=http://127.0.0.1:8089/');
+seed(array(Queue::EVERYTHING => $now - 10));
+Queue::retry();
+pin('the purge-everything entry is dropped', array(), Queue::load());
+pin('...without a request', 0, Client::$purgeAllCalls);
+
+putenv('OSC_PAGE_CACHE_PURGE_URL');
+Client::$purgeAllAnswer = 403;
+seed(array(Queue::EVERYTHING => $now - 10));
+Queue::retry();
+check('without the URL it is retried as before', Client::$purgeAllCalls === 1 && isset(Queue::load()[Queue::EVERYTHING]));
+if ($had !== false) {
+    putenv('OSC_PAGE_CACHE_PURGE_URL=' . $had);
+}
 
 exit(harness_result());
