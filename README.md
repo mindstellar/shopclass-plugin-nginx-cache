@@ -77,7 +77,7 @@ On the Shopclass Docker image 6.4.2+ with `OSC_MICROCACHE=1`, core purges everyt
 through `OSC_PAGE_CACHE_PURGE_URL`. The plugin's own purge-all request is skipped, no
 fallback or queued retry is made, and the `purge_all` line is not needed. **Purge
 everything now** asks core, which clears the cache at the end of the request. Older cores
-and other installs work as described above.
+and other installs work as described above. On Shopclass 6.4.3+ this also holds for cron and CLI commands in the image.
 
 The `purge_all` line allows `127.0.0.1` only. Where PHP runs in another container, add
 that container's address to it by hand.

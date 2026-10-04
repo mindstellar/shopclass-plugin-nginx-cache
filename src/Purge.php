@@ -73,10 +73,18 @@ class Purge
     /**
      * Whether core clears the whole cache itself: the Docker image 6.4.2+ with
      * OSC_MICROCACHE=1 sends one PURGE to a loopback server that has a purge_all rule.
+     * Core 6.4.3+ derives that address itself, so cron and CLI see it too.
      */
     public static function coreHandlesPurgeAll(): bool
     {
-        return function_exists('osc_purge_page_cache') && (string) getenv('OSC_PAGE_CACHE_PURGE_URL') !== '';
+        if (!function_exists('osc_purge_page_cache')) {
+            return false;
+        }
+        $url = function_exists('osc_page_cache_purge_url')
+            ? osc_page_cache_purge_url()
+            : (string) getenv('OSC_PAGE_CACHE_PURGE_URL');
+
+        return $url !== '';
     }
 
     /**

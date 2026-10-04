@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2
+
+### Fixed
+- Cron and CLI on the Docker image also leave purge-everything to Shopclass 6.4.3+.
+
 ## 0.5.1
 
 ### Fixed

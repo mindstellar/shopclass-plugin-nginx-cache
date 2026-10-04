@@ -201,6 +201,20 @@ if ($had !== false) {
     putenv('OSC_PAGE_CACHE_PURGE_URL=' . $had);
 }
 
+function osc_page_cache_purge_url(): string
+{
+    return $GLOBALS['helperUrl'];
+}
+
+putenv('OSC_PAGE_CACHE_PURGE_URL');
+$GLOBALS['helperUrl'] = 'http://127.0.0.1:8089/';
+check('helper returns a URL, env unset: handled by core', Purge::coreHandlesPurgeAll());
+$GLOBALS['helperUrl'] = '';
+check('helper returns nothing: not handled by core', !Purge::coreHandlesPurgeAll());
+if ($had !== false) {
+    putenv('OSC_PAGE_CACHE_PURGE_URL=' . $had);
+}
+
 harness_section('a PURGE that reached PHP');
 
 check('PURGE is refused', Purge::isStrayPurge('PURGE'));
