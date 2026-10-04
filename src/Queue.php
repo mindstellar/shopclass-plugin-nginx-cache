@@ -34,6 +34,9 @@ class Queue
 
     public const KEY = 'queue';
 
+    /** An entry meaning "purge everything"; delivering it makes the rest redundant. */
+    public const EVERYTHING = '*';
+
     /**
      * Two requests failing at the same moment can overwrite each other's entry here.
      * That is accepted rather than locked around: the loss is one retry of one URL whose
@@ -78,6 +81,20 @@ class Queue
         $cutoff = time() - self::maxAge();
         $keep   = array();
 
+        if (isset($entries[self::EVERYTHING])) {
+            $failedAt = $entries[self::EVERYTHING];
+            unset($entries[self::EVERYTHING]);
+
+            if ($failedAt >= $cutoff) {
+                if (Client::purgeAllSettled(Client::purgeEverything())) {
+                    self::save(array());
+
+                    return;
+                }
+                $keep[self::EVERYTHING] = $failedAt;
+            }
+        }
+
         foreach ($entries as $url => $failedAt) {
             // Older than the longest window the plugin hands out: whatever was cached
             // when this failed has expired on its own, so there is nothing to purge.
@@ -96,6 +113,13 @@ class Queue
         }
 
         self::save($keep);
+    }
+
+    public static function clear(): void
+    {
+        if (self::load() !== array()) {
+            self::save(array());
+        }
     }
 
     /** @return array<string, int> url => unix time of the first failure */

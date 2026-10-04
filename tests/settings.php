@@ -62,6 +62,14 @@ function __($s, $domain = '')
 {
     return $s;
 }
+function osc_is_admin_user_logged_in()
+{
+    return true;
+}
+function osc_is_moderator()
+{
+    return $GLOBALS['moderator'] ?? false;
+}
 
 /** The request, as core's typed accessors read it. */
 class Params
@@ -87,6 +95,7 @@ $GLOBALS['flash'] = array();
 require_once __DIR__ . '/lib/fake-client.php';
 require_once ABS_PATH . 'src/Plugin.php';
 require_once ABS_PATH . 'src/Queue.php';
+require_once ABS_PATH . 'src/Purge.php';
 require_once __DIR__ . '/lib/harness.php';
 
 use mindstellar\nginxcache\Client;
@@ -259,5 +268,35 @@ try {
 pin('the one that went through is gone', 1, count(Queue::load()));
 check('and the count is reported', strpos((string) ($GLOBALS['flash'][0][1] ?? ''), '1 of 2') !== false,
     (string) ($GLOBALS['flash'][0][1] ?? ''));
+
+harness_section('purge everything now');
+
+stored(array('queue' => json_encode(array('http://shop.example/a' => time()))));
+Params::$values   = form('purge_all');
+$GLOBALS['flash'] = array();
+Client::reset();
+Client::$purgeAllAnswer = 200;
+$GLOBALS['csrfChecked'] = false;
+try {
+    Plugin::handleAdminPost();
+} catch (RuntimeException $e) {
+}
+check('the token is checked', $GLOBALS['csrfChecked'] === true);
+pin('one purge-all is sent', 1, Client::$purgeAllCalls);
+pin('it says so', 'ok', $GLOBALS['flash'][0][0] ?? '');
+pin('...and the queue it superseded is empty', array(), Queue::load());
+
+stored();
+$GLOBALS['moderator'] = true;
+Params::$values   = form('purge_all');
+$GLOBALS['flash'] = array();
+Client::reset();
+try {
+    Plugin::handleAdminPost();
+} catch (RuntimeException $e) {
+}
+pin('a moderator cannot', 0, Client::$purgeAllCalls);
+pin('...and is told', 'error', $GLOBALS['flash'][0][0] ?? '');
+$GLOBALS['moderator'] = false;
 
 exit(harness_result());

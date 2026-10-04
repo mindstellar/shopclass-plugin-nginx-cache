@@ -133,7 +133,16 @@ fastcgi_cache_lock       on;
 fastcgi_cache_use_stale  updating error timeout http_500 http_503;
 fastcgi_cache_background_update on;
 add_header X-Cache \$upstream_cache_status always;
-CONF;
+CONF . "\n" . self::purgeAllDirective();
+    }
+
+    /**
+     * Lets one `PURGE /index.php` from PHP wipe the whole zone, for theme and settings
+     * changes that touch every page. The module the Dockerfile builds supports it.
+     */
+    public static function purgeAllDirective(): string
+    {
+        return 'fastcgi_cache_purge PURGE purge_all from ' . implode(' ', self::ALLOW) . ';';
     }
 
     /**

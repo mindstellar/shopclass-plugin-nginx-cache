@@ -3,7 +3,7 @@
 Plugin Name: nginx Cache
 Plugin URI: https://github.com/mindstellar/shopclass-plugin-nginx-cache
 Description: Hold pages in nginx's FastCGI cache for an hour instead of thirty seconds, and purge them the moment a listing changes — including after a storage offload rewrites its image URLs.
-Version: 0.4.1
+Version: 0.5.0
 Author: Navjot Tomer (Mindstellar)
 Author URI: https://mindstellar.com
 Short Name: nginx-cache
@@ -102,6 +102,20 @@ osc_add_hook('add_category', array(Purge::class, 'onCategory'));
 osc_add_hook('after_delete_category', array(Purge::class, 'onCategory'));
 osc_add_hook('edit_page', array(Purge::class, 'onPage'));
 osc_add_hook('after_delete_page', array(Purge::class, 'onPage'));
+
+// ── Site-wide changes ────────────────────────────────────────────────────────
+// Core 6.4.2+ fires page_cache_purge once per request; older cores get the shim hooks.
+foreach (Purge::purgeAllHooks(function_exists('osc_purge_page_cache')) as $nginx_cache_hook => $nginx_cache_cb) {
+    osc_add_hook($nginx_cache_hook, $nginx_cache_cb);
+}
+unset($nginx_cache_hook, $nginx_cache_cb);
+
+// A PURGE that reaches PHP was not handled by nginx. Answer 405 so the sender falls back.
+if (Purge::isStrayPurge((string) ($_SERVER['REQUEST_METHOD'] ?? ''))) {
+    http_response_code(405);
+    header('Allow: GET, HEAD, POST');
+    exit;
+}
 
 // One request may fire several of the hooks above for the same listing. Collect the
 // URLs, de-duplicate, and send once the response is out of the way. This is a filter,

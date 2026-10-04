@@ -117,7 +117,7 @@ check('...and it says how many', strpos($r['message'], '2 hosts') !== false, $r[
 pin('each was primed and re-checked under its own name', array(
     'shop.example:8000', 'shop.example:8000', 'shop.example:8000',
     'www.shop.example:8000', 'www.shop.example:8000', 'www.shop.example:8000',
-), array_column(Client::$probeCalls, 'host'));
+), array_slice(array_column(Client::$probeCalls, 'host'), 0, 6));
 pin('and purged under its own name', array('shop.example:8000', 'www.shop.example:8000'), Client::$purgeHosts);
 
 /* A second host that is not caching is a failure even though the first one worked --
@@ -188,6 +188,38 @@ foreach ($cases as $label => [$probes, $purge, $settings]) {
     check($label . ' — fails', !$r['ok'], $r['message']);
     check($label . ' — and says why', $r['message'] !== '' && substr($r['message'], -1) === '.', $r['message']);
 }
+
+harness_section('purge everything is proved too, but does not hold the gate');
+
+/* After the per-host round trip: prime the home page, purge everything, and check the
+   entry went. A failure there is a warning on the settings page, not a closed gate. */
+$r = run(array($miss, $hit, $miss, $hit, $miss));
+check('without purge-all reachable the test still passes', $r['ok'], $r['message']);
+pin('...the gate opens', '1', $GLOBALS['prefs']['nginx_cache']['verified']);
+pin('...and purge_all_ok records the failure', '0', $GLOBALS['prefs']['nginx_cache']['purge_all_ok']);
+
+$GLOBALS['prefs']['nginx_cache'] = array('purge_endpoint' => 'http://127.0.0.1/purge', 'purge_host' => 'shop.example:8000');
+Client::reset();
+Client::$probes         = array($miss, $hit, $miss, $hit, $miss);
+Client::$answers        = array($GLOBALS['baseUrl'] => 200);
+Client::$purgeAllAnswer = 200;
+$r = Plugin::selfTest();
+check('with purge-all working it passes', $r['ok'], $r['message']);
+pin('...purge_all_ok is set', '1', $GLOBALS['prefs']['nginx_cache']['purge_all_ok']);
+pin('...after exactly one purge-all', 1, Client::$purgeAllCalls);
+
+Client::reset();
+Client::$probes         = array($miss, $hit, $miss, $hit, $hit);
+Client::$answers        = array($GLOBALS['baseUrl'] => 200);
+Client::$purgeAllAnswer = 200;
+$r = Plugin::selfTest();
+pin('a 200 that left the page cached is not proof', '0', $GLOBALS['prefs']['nginx_cache']['purge_all_ok']);
+pin('...and the gate is still open', '1', $GLOBALS['prefs']['nginx_cache']['verified']);
+
+$GLOBALS['prefs']['nginx_cache']['purge_all_ok'] = '1';
+run(array($miss, $hit), 412);
+pin('a failing per-host test clears purge_all_ok', '0', $GLOBALS['prefs']['nginx_cache']['purge_all_ok']);
+pin('...without trying purge-all', 0, Client::$purgeAllCalls);
 
 harness_section('a passing test after a failing one reopens the gate');
 

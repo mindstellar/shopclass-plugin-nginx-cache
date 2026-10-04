@@ -7,6 +7,7 @@
 
 namespace mindstellar\nginxcache;
 
+use Category;
 use Item;
 use Page;
 
@@ -30,6 +31,103 @@ class Purge
 {
     /** @var array<string, true> URLs collected this request, de-duplicated by key. */
     private static $pending = array();
+
+    /** Set by the hooks older cores fire instead of page_cache_purge; flushed once. */
+    private static $purgeAllRequested = false;
+
+    /** Core events that clear the whole cache when core itself does not signal them. */
+    public const LEGACY_HOOKS = array(
+        'theme_activate',
+        'after_plugin_activate',
+        'after_plugin_deactivate',
+        'admin_form_after_save',
+    );
+
+    /**
+     * The hooks that lead to a purge of everything.
+     *
+     * Cores with osc_purge_page_cache() fire page_cache_purge once per request for every
+     * site-wide change. Older ones do not, so the plugin listens to the main ones itself;
+     * doing both would purge twice.
+     *
+     * @return array<string, callable> hook => callback
+     */
+    public static function purgeAllHooks(bool $coreSignals): array
+    {
+        $hooks = array('page_cache_purge' => array(self::class, 'onPurgeAll'));
+        if (!$coreSignals) {
+            foreach (self::LEGACY_HOOKS as $hook) {
+                $hooks[$hook] = array(self::class, 'requestPurgeAll');
+            }
+        }
+
+        return $hooks;
+    }
+
+    /** A PURGE that reached PHP means nginx has no purge_all line; refuse it with 405. */
+    public static function isStrayPurge(string $method): bool
+    {
+        return strtoupper($method) === 'PURGE';
+    }
+
+    /**
+     * Purge everything, or as much as can be named when nginx will not.
+     *
+     * @param array $reasons why core asked; not used, every reason gets the same purge
+     *
+     * @return bool whether the whole cache was cleared
+     */
+    public static function onPurgeAll($reasons = array()): bool
+    {
+        $status = Client::purgeEverything();
+        if (Client::purgeAllSettled($status)) {
+            // Everything collected this request, and everything queued, is gone with it.
+            self::$pending = array();
+            Queue::clear();
+
+            return true;
+        }
+
+        self::collect(self::nameableUrls());
+        self::flush();
+        Queue::add(Queue::EVERYTHING);
+
+        return false;
+    }
+
+    /** @param mixed ...$args whatever the legacy hook passes */
+    public static function requestPurgeAll(...$args): void
+    {
+        self::$purgeAllRequested = true;
+    }
+
+    /**
+     * The pages a site-wide change touches that have a URL a purge can name: home, every
+     * enabled category, every static page (not the e-mail templates) and the sitemap.
+     *
+     * @return string[]
+     */
+    public static function nameableUrls(): array
+    {
+        $urls = array(osc_base_url());
+
+        foreach (Category::newInstance()->listEnabled() as $category) {
+            if (!empty($category['pk_i_id'])) {
+                $urls[] = osc_search_url(array('sCategory' => (int) $category['pk_i_id']));
+            }
+        }
+
+        foreach (Page::newInstance()->listAll(0) as $page) {
+            $urls = array_merge($urls, self::pageUrlsFor((array) $page));
+        }
+
+        if (function_exists('osc_sitemap_robots_line')
+            && preg_match('~^Sitemap:\s*(\S+)~', (string) osc_sitemap_robots_line(), $m)) {
+            $urls[] = $m[1];
+        }
+
+        return array_values(array_unique($urls));
+    }
 
     /** @param array $item full item array — posted_item, edited_item */
     public static function onItemArray($item): void
@@ -146,7 +244,15 @@ class Purge
     private static function pageUrls(int $id): array
     {
         $page = Page::newInstance()->findByPrimaryKey($id);
-        if (!$page || empty($page['pk_i_id'])) {
+
+        return is_array($page) ? self::pageUrlsFor($page) : array();
+    }
+
+    /** @return string[] */
+    private static function pageUrlsFor(array $page): array
+    {
+        $id = (int) ($page['pk_i_id'] ?? 0);
+        if ($id <= 0) {
             return array();
         }
 
@@ -220,6 +326,13 @@ class Purge
 
     public static function flush(): void
     {
+        if (self::$purgeAllRequested) {
+            self::$purgeAllRequested = false;
+            if (self::onPurgeAll(array('legacy'))) {
+                return;
+            }
+        }
+
         if (self::$pending === array()) {
             return;
         }

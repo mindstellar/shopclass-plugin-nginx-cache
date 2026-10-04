@@ -162,12 +162,54 @@ class Client
     }
 
     /**
+     * Wipe the whole cache zone with one `PURGE` request.
+     *
+     * Sent to the origin of the purge endpoint plus /index.php, where the `purge_all`
+     * directive sits in the PHP location. One request covers every host, so it names the
+     * first configured one only.
+     *
+     * @return int HTTP status, 0 when the origin could not be reached or nothing is configured
+     */
+    public static function purgeEverything(?string $endpoint = null): int
+    {
+        $target = self::purgeAllUrl($endpoint ?? (string) Plugin::get('purge_endpoint'));
+        if ($target === '') {
+            return 0;
+        }
+
+        return self::request('PURGE', $target, (string) (Plugin::purgeHosts()[0] ?? ''));
+    }
+
+    /** Where the purge-all request goes: the endpoint's origin, then /index.php. */
+    public static function purgeAllUrl(string $endpoint): string
+    {
+        $origin = Plugin::originOf($endpoint);
+
+        return $origin === '' ? '' : $origin . '/index.php';
+    }
+
+    /**
+     * Whether a purge-all answer means the zone is clear. 404 and 412 are the module's
+     * answers for an empty zone; a PURGE that reaches PHP instead is refused with 405.
+     */
+    public static function purgeAllSettled(int $status): bool
+    {
+        return $status === 200 || $status === 404 || $status === self::NOT_CACHED;
+    }
+
+    /** @return int HTTP status, 0 when the request never completed */
+    public static function get(string $target, string $host, array $headers = array()): int
+    {
+        return self::request('GET', $target, $host, $headers);
+    }
+
+    /**
      * One request, no exceptions out. A purge that cannot be delivered is a queue entry,
      * never a fatal on the save that triggered it.
      *
      * @return int HTTP status, 0 when the request never completed
      */
-    public static function get(string $target, string $host, array $headers = array()): int
+    public static function request(string $method, string $target, string $host, array $headers = array()): int
     {
         if ($host !== '') {
             $headers['Host'] = $host;
@@ -175,7 +217,7 @@ class Client
 
         try {
             $response = HttpClient::create(array('verify_peer' => false, 'verify_host' => false))
-                ->request('GET', $target, array(
+                ->request($method, $target, array(
                     'headers'       => $headers,
                     'timeout'       => self::TIMEOUT,
                     // A redirect would be answered by a different URL than the one whose

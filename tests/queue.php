@@ -145,6 +145,37 @@ check('dropped without a round trip', !in_array('https://example.test/stale', Cl
 check('...and it is gone', !isset($left['https://example.test/stale']));
 check('the one still inside the window is retried', in_array('https://example.test/fresh', Client::$calls, true));
 
+harness_section('the purge-everything entry');
+
+seed(array(
+    Queue::EVERYTHING          => $now - 10,
+    'https://example.test/one' => $now - 10,
+));
+Client::$purgeAllAnswer = 200;
+Queue::retry();
+pin('one purge-all is sent', 1, Client::$purgeAllCalls);
+pin('...and it makes the other entries redundant', array(), Queue::load());
+pin('...so they are not sent one by one', 0, count(Client::$calls));
+
+seed(array(
+    Queue::EVERYTHING          => $now - 10,
+    'https://example.test/one' => $now - 10,
+));
+Client::$purgeAllAnswer = 405;
+Client::$answers        = array('https://example.test/one' => 200);
+Queue::retry();
+check('a refused purge-all stays queued', isset(Queue::load()[Queue::EVERYTHING]));
+check('...while the named entries are still retried', !isset(Queue::load()['https://example.test/one']));
+
+seed(array(Queue::EVERYTHING => $now - 7300));
+Queue::retry();
+pin('an expired purge-all entry is dropped without a request', 0, Client::$purgeAllCalls);
+pin('...and is gone', array(), Queue::load());
+
+seed(array('https://example.test/a' => $now - 10));
+Queue::clear();
+pin('clear empties the queue', array(), Queue::load());
+
 harness_section('nothing queued, nothing done');
 
 seed(array());

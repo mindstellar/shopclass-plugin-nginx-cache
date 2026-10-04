@@ -18,6 +18,7 @@ if (!defined('ABS_PATH')) {
 
 $e         = 'osc_esc_html';
 $verified  = (bool) osc_get_bool_preference('verified', Plugin::SECTION);
+$purgeAll  = (bool) osc_get_bool_preference('purge_all_ok', Plugin::SECTION);
 $last      = json_decode((string) Plugin::get('last_test'), true);
 $queued    = count(Queue::load());
 $suggested = Setup::suggested();
@@ -52,6 +53,13 @@ $selfUrl   = osc_route_admin_url('nginx-cache-settings');
     <div class="alert alert-secondary" role="status">
       <?php echo $e(__('Nothing is held longer than core already holds it until a purge has been watched to work. Fill in the two settings below and press Test purge.', 'nginx-cache')); ?>
       <a href="<?php echo $e($helpUrl); ?>"><?php echo $e(__('What nginx needs', 'nginx-cache')); ?></a>
+    </div>
+  <?php } ?>
+
+  <?php if ($verified && !$purgeAll) { ?>
+    <div class="alert alert-warning" role="status">
+      <?php echo $e(__('Purge everything is not configured: theme and settings changes clear only the pages the plugin can name; listings refresh within the hour. Add the line from Setup.', 'nginx-cache')); ?>
+      <a href="<?php echo $e($helpUrl); ?>"><?php echo $e(__('Setup', 'nginx-cache')); ?></a>
     </div>
   <?php } ?>
 
@@ -158,6 +166,9 @@ $selfUrl   = osc_route_admin_url('nginx-cache-settings');
       </button>
       <button class="btn btn-outline-primary" type="submit" name="nginx_cache_action" value="test">
         <?php echo $e(__('Test purge', 'nginx-cache')); ?>
+      </button>
+      <button class="btn btn-outline-secondary" type="submit" name="nginx_cache_action" value="purge_all">
+        <?php echo $e(__('Purge everything now', 'nginx-cache')); ?>
       </button>
       <span class="ngxc-spacer"></span>
       <a class="btn btn-link btn-sm" href="<?php echo $e($helpUrl); ?>">

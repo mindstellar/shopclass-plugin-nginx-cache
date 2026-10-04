@@ -67,6 +67,9 @@ class Plugin
             // Set only by a self-test that primed, purged and confirmed the entry gone.
             // Cleared whenever the endpoint or host changes. Ttl reads this.
             'verified'       => array('0', 'BOOLEAN'),
+            // Whether the self-test also proved purge-all. A warning only; it does not
+            // gate the longer windows.
+            'purge_all_ok'   => array('0', 'BOOLEAN'),
             // What that self-test last reported, for the admin page to show.
             'last_test'      => array('', 'STRING'),
             // Purges the origin refused, waiting for the next cron tick. See Queue.
@@ -236,6 +239,8 @@ class Plugin
             }
         }
 
+        osc_set_preference('purge_all_ok', self::testPurgeAll($origin, $hosts[0]) ? '1' : '0', self::SECTION, 'BOOLEAN');
+
         return self::verdict(true, count($hosts) === 1
             ? __('Purge confirmed: the page was cached, purged, and re-rendered. Longer cache windows are now in use.', 'nginx-cache')
             : sprintf(
@@ -314,6 +319,29 @@ class Plugin
     }
 
     /**
+     * Prime the home page, purge everything, and check the entry went with it.
+     *
+     * The page was just re-rendered by the per-host test, so one probe is usually enough
+     * to find it held; a second covers a cache that stores on the next request.
+     */
+    private static function testPurgeAll(string $origin, string $host): bool
+    {
+        $probe = $origin . (string) (parse_url(osc_base_url(), PHP_URL_PATH) ?: '/');
+
+        $held = self::isHeld(Client::probe($probe, $host)['cache'])
+            || self::isHeld(Client::probe($probe, $host)['cache']);
+        if (!$held) {
+            return false;
+        }
+
+        if (!Client::purgeAllSettled(Client::purgeEverything())) {
+            return false;
+        }
+
+        return !self::isHeld(Client::probe($probe, $host)['cache']);
+    }
+
+    /**
      * Whether nginx says it has an entry for this page.
      *
      * Not just HIT. An entry past its window is served stale while it refreshes behind
@@ -347,6 +375,9 @@ class Plugin
     /** Record the verdict; `verified` is the flag Ttl reads before lengthening anything. */
     private static function verdict(bool $ok, string $message): array
     {
+        if (!$ok) {
+            osc_set_preference('purge_all_ok', '0', self::SECTION, 'BOOLEAN');
+        }
         osc_set_preference('verified', $ok ? '1' : '0', self::SECTION, 'BOOLEAN');
         osc_set_preference('last_test', (string) json_encode(array(
             'ok'      => $ok,
@@ -380,6 +411,7 @@ class Plugin
         // the gate closes and the longer windows stop until the test is run again.
         if ($endpoint !== (string) self::get('purge_endpoint') || $host !== (string) self::get('purge_host')) {
             osc_set_preference('verified', '0', self::SECTION, 'BOOLEAN');
+            osc_set_preference('purge_all_ok', '0', self::SECTION, 'BOOLEAN');
             osc_set_preference('last_test', '', self::SECTION);
         }
 
@@ -434,6 +466,16 @@ class Plugin
                     osc_add_flash_ok_message($result['message'], 'admin');
                 } else {
                     osc_add_flash_error_message($result['message'], 'admin');
+                }
+                break;
+
+            case 'purge_all':
+                if (!osc_is_admin_user_logged_in() || osc_is_moderator()) {
+                    osc_add_flash_error_message(__('Only an administrator can purge everything.', 'nginx-cache'), 'admin');
+                } elseif (Purge::onPurgeAll(array('admin'))) {
+                    osc_add_flash_ok_message(__('Everything in the cache was purged.', 'nginx-cache'), 'admin');
+                } else {
+                    osc_add_flash_warning_message(__('nginx would not purge everything, so only the pages the plugin can name were purged. The rest is queued for the next cron run. Add the purge-all line from Setup.', 'nginx-cache'), 'admin');
                 }
                 break;
 

@@ -78,6 +78,12 @@ check('X-Cache is emitted', strpos($php, 'add_header X-Cache $upstream_cache_sta
 check('nothing overrides the app\'s own window', strpos($php, 'fastcgi_cache_valid') === false);
 check('...and nothing ignores its headers', strpos($php, 'fastcgi_ignore_headers') === false);
 
+harness_section('purge everything');
+
+pin('the purge-all line', 'fastcgi_cache_purge PURGE purge_all from 127.0.0.1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16;', Setup::purgeAllDirective());
+check('it is in the PHP block the page prints', strpos($php, Setup::purgeAllDirective()) !== false, $php);
+check('...and in the reference file', strpos((string) file_get_contents(ABS_PATH . 'nginx/shopclass-cache.conf'), Setup::purgeAllDirective()) !== false);
+
 harness_section('the Dockerfile is for the nginx that is actually running');
 
 $_SERVER['SERVER_SOFTWARE'] = 'nginx/1.31.3';

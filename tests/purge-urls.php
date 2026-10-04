@@ -257,6 +257,16 @@ pin('HTTPS=off is not https', 'http', Plugin::originScheme());
 unset($_SERVER['HTTPS']);
 pin('nothing passed at all — the base URL is the last resort', 'https', Plugin::originScheme());
 
+harness_section('where purge-all goes');
+
+pin('the endpoint\'s origin, then /index.php', 'https://127.0.0.1/index.php', Client::purgeAllUrl('https://127.0.0.1/purge'));
+pin('...port kept', 'http://web:8080/index.php', Client::purgeAllUrl('http://web:8080/purge'));
+pin('no endpoint, no target', '', Client::purgeAllUrl(''));
+pin('...and nothing is sent', 0, Client::purgeEverything(''));
+foreach (array(200 => true, 404 => true, 412 => true, 403 => false, 405 => false, 0 => false, 500 => false) as $status => $settled) {
+    pin('purge-all ' . $status . ($settled ? ' is settled' : ' is not'), $settled, Client::purgeAllSettled($status));
+}
+
 harness_section('defaults');
 
 putenv('SHOPCLASS_PURGE_ENDPOINT');

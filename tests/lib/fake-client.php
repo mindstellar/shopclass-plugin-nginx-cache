@@ -30,6 +30,24 @@ class Client
     /** @var string[] the Host each purge presented */
     public static $purgeHosts = array();
 
+    /** @var int what a purge-all answers */
+    public static $purgeAllAnswer = 0;
+
+    /** @var int how many purge-all requests were sent */
+    public static $purgeAllCalls = 0;
+
+    public static function purgeEverything(?string $endpoint = null): int
+    {
+        self::$purgeAllCalls++;
+
+        return self::$purgeAllAnswer;
+    }
+
+    public static function purgeAllSettled(int $status): bool
+    {
+        return $status === 200 || $status === 404 || $status === self::NOT_CACHED;
+    }
+
     public static function isSettled(int $status): bool
     {
         return $status === 200 || $status === self::NOT_CACHED;
@@ -54,6 +72,8 @@ class Client
     public static function reset(): void
     {
         self::$calls = self::$answers = self::$probeCalls = self::$probes = self::$purgeHosts = array();
+        self::$purgeAllAnswer = self::$purgeAllCalls = 0;
+        self::$batchUrls = array();
     }
 
     /** @return array<string, int> host => status, the same shape the real client returns */
@@ -80,9 +100,13 @@ class Client
     }
 
     /** Never called from the retry path — calling it there would re-queue a failure. */
+    /** @var string[] URLs handed to purge(), in order */
+    public static $batchUrls = array();
+
     public static function purge(array $urls): array
     {
         self::$calls[] = 'PURGE-BATCH';
+        self::$batchUrls = array_merge(self::$batchUrls, $urls);
 
         return array();
     }
