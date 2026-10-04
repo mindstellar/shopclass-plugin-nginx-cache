@@ -201,9 +201,12 @@ if ($had !== false) {
     putenv('OSC_PAGE_CACHE_PURGE_URL=' . $had);
 }
 
-function osc_page_cache_purge_url(): string
-{
-    return $GLOBALS['helperUrl'];
+// Defined here, not at the top of the file: a top-level function exists before line 1 runs.
+if (!function_exists('osc_page_cache_purge_url')) {
+    function osc_page_cache_purge_url(): string
+    {
+        return (string) ($GLOBALS['helperUrl'] ?? '');
+    }
 }
 
 putenv('OSC_PAGE_CACHE_PURGE_URL');
