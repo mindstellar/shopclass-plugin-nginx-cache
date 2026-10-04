@@ -90,14 +90,14 @@ $step = static function ($n, $title, $lead, $code) use ($e) {
   <?php $step(
       4,
       __('Add the purge location', 'nginx-cache'),
-      __('server{} scope. $1 is the path being purged and $is_args$args is its query, so the key built here is the same one step 5 stored the page under. The allow list is the whole of the access control: a purge takes no credentials, so this must not be reachable from outside.', 'nginx-cache'),
+      __('server{} scope. $1 is the path being purged and $is_args$args is its query, so the key built here is the same one step 5 stored the page under. The allow list is the whole of the access control: a purge takes no credentials, so this must not be reachable from outside. If nginx uses real_ip (set_real_ip_from with X-Forwarded-For), narrow set_real_ip_from to the proxy itself: otherwise an internet client can claim a private or loopback address and pass the allow list.', 'nginx-cache'),
       Setup::purgeLocation()
   ); ?>
 
   <?php $step(
       5,
       __('Turn caching on for PHP', 'nginx-cache'),
-      __('Inside the existing "location ~ \\.php$", alongside its fastcgi_pass. X-Cache is not decoration: Test purge reads it to tell "cached, then purged" from "never cached", and refuses to lengthen anything without it. The last line lets one PURGE from PHP clear the whole cache when the theme, a plugin or a setting changes; without it those changes clear only the pages the plugin can name.', 'nginx-cache'),
+      __('Inside the existing "location ~ \\.php$", alongside its fastcgi_pass. X-Cache is not decoration: Test purge reads it to tell "cached, then purged" from "never cached", and refuses to lengthen anything without it. The last line lets one PURGE from PHP clear the whole cache when the theme, a plugin or a setting changes; without it those changes clear only the pages the plugin can name. It allows the loopback only; where PHP runs in another container, add that container\'s address to it, and narrow set_real_ip_from as in step 4.', 'nginx-cache'),
       Setup::phpScope()
   ); ?>
 

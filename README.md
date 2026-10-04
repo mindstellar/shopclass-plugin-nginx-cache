@@ -75,6 +75,14 @@ now** on the settings page does the same by hand.
 
 On the Shopclass Docker image 6.4.2+ with `OSC_MICROCACHE=1` nothing extra is needed.
 
+The `purge_all` line allows `127.0.0.1` only. Where PHP runs in another container, add
+that container's address to it by hand.
+
+**Narrow `set_real_ip_from` to your proxy.** With `real_ip` reading `X-Forwarded-For`, nginx
+checks the allow list against the forwarded address. If `set_real_ip_from` trusts more than
+the proxy itself, an internet client can claim `127.0.0.1` or a private address and pass
+the allow list on both the purge location and the `purge_all` line.
+
 ## Events it listens to
 
 The set the Cloudflare plugin uses, which is the tested list of what core actually fires,
@@ -90,6 +98,7 @@ The last one (6.2.0+) fires when a storage offload moves a listing's images.
 For purge-everything: **`page_cache_purge`**, which core 6.4.2+ fires once per request for
 every site-wide change. On older cores the plugin listens to `theme_activate`,
 `after_plugin_activate`, `after_plugin_deactivate` and `admin_form_after_save` instead.
+So on cores 6.2 to 6.4.1, any admin settings save purges the whole cache.
 
 ## Relationship to the Cloudflare plugin
 

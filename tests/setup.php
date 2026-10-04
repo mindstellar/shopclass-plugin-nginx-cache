@@ -80,7 +80,8 @@ check('...and nothing ignores its headers', strpos($php, 'fastcgi_ignore_headers
 
 harness_section('purge everything');
 
-pin('the purge-all line', 'fastcgi_cache_purge PURGE purge_all from 127.0.0.1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16;', Setup::purgeAllDirective());
+pin('the purge-all line allows the loopback only', 'fastcgi_cache_purge PURGE purge_all from 127.0.0.1;', Setup::purgeAllDirective());
+check('...not the private ranges', strpos(Setup::purgeAllDirective(), '172.16.0.0/12') === false);
 check('it is in the PHP block the page prints', strpos($php, Setup::purgeAllDirective()) !== false, $php);
 check('...and in the reference file', strpos((string) file_get_contents(ABS_PATH . 'nginx/shopclass-cache.conf'), Setup::purgeAllDirective()) !== false);
 

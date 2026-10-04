@@ -58,8 +58,15 @@ class Queue
             $entries[$url] = time();
         }
 
-        if (count($entries) > self::CAP) {
-            $entries = array_slice($entries, -self::CAP, null, true);
+        // The purge-everything entry stays first and is never trimmed: it covers all the rest.
+        $everything = $entries[self::EVERYTHING] ?? null;
+        unset($entries[self::EVERYTHING]);
+        $room = $everything === null ? self::CAP : self::CAP - 1;
+        if (count($entries) > $room) {
+            $entries = array_slice($entries, -$room, null, true);
+        }
+        if ($everything !== null) {
+            $entries = array(self::EVERYTHING => $everything) + $entries;
         }
 
         self::save($entries);

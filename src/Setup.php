@@ -27,6 +27,9 @@ class Setup
     /** Where PHP runs, from nginx's point of view. */
     public const ALLOW = array('127.0.0.1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16');
 
+    /** Who may purge everything. Wiping the zone is worse than one stale URL, so: loopback. */
+    public const PURGE_ALL_ALLOW = array('127.0.0.1');
+
     /** The version the Dockerfile builds against when nginx has not said which it is. */
     public const FALLBACK_NGINX = '1.29.0';
 
@@ -139,10 +142,13 @@ CONF . "\n" . self::purgeAllDirective();
     /**
      * Lets one `PURGE /index.php` from PHP wipe the whole zone, for theme and settings
      * changes that touch every page. The module the Dockerfile builds supports it.
+     *
+     * Loopback only by default. Where PHP runs in another container, add its address by
+     * hand, and narrow set_real_ip_from to the proxy so a forwarded header cannot fake it.
      */
     public static function purgeAllDirective(): string
     {
-        return 'fastcgi_cache_purge PURGE purge_all from ' . implode(' ', self::ALLOW) . ';';
+        return 'fastcgi_cache_purge PURGE purge_all from ' . implode(' ', self::PURGE_ALL_ALLOW) . ';';
     }
 
     /**

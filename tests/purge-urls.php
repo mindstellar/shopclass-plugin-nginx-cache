@@ -263,11 +263,27 @@ pin('the endpoint\'s origin, then /index.php', 'https://127.0.0.1/index.php', Cl
 pin('...port kept', 'http://web:8080/index.php', Client::purgeAllUrl('http://web:8080/purge'));
 pin('no endpoint, no target', '', Client::purgeAllUrl(''));
 pin('...and nothing is sent', 0, Client::purgeEverything(''));
-foreach (array(200 => true, 404 => true, 412 => true, 403 => false, 405 => false, 0 => false, 500 => false) as $status => $settled) {
-    pin('purge-all ' . $status . ($settled ? ' is settled' : ' is not'), $settled, Client::purgeAllSettled($status));
+pin('only a confirmed purge is settled', true, Client::purgeAllSettled(200));
+foreach (array(404, 412, 403, 405, 0, 500, Client::UNCONFIRMED) as $status) {
+    pin('purge-all ' . $status . ' is not settled', false, Client::purgeAllSettled($status));
 }
 
-harness_section('defaults');
+harness_section('a purge-all answer has to come from the purge module');
+
+$html = '<html><head><title>Cache Purge</title></head><body bgcolor="white"><center><h1>Cache Purge</h1><p>Key: httpPURGEshop.example/index.php</p><p>Status: purged</p></center></body></html>';
+pin('3.0 html body, 200', 200, Client::purgeAllStatus(200, $html));
+pin('3.0 text body', 200, Client::purgeAllStatus(200, "Key: x\nStatus: purged\n"));
+pin('3.0 json body', 200, Client::purgeAllStatus(200, '{"Key": "x", "Status": "purged"}'));
+pin('3.0 xml body', 200, Client::purgeAllStatus(200, '<?xml version="1.0"?><status><Key><![CDATA[x]]></Key><Status>purged</Status></status>'));
+pin('queued by background purge, 202', 200, Client::purgeAllStatus(202, '{"Key": "x", "Status": "queued"}'));
+pin('2.x body', 200, Client::purgeAllStatus(200, '<html><head><title>Successful purge</title></head><body>Key : x<br>Path: y</body></html>'));
+pin('a 200 rendered by PHP is unconfirmed', Client::UNCONFIRMED, Client::purgeAllStatus(200, '<!doctype html><title>My shop</title>Status: open for business'));
+pin('a bare 404 stays a 404', 404, Client::purgeAllStatus(404, '<html><title>404 Not Found</title></html>'));
+pin('...even naming a purge, it is not settled', false, Client::purgeAllSettled(Client::purgeAllStatus(404, 'Status: purged')));
+pin('a 412 stays a 412', 412, Client::purgeAllStatus(412, ''));
+pin('a refusal stays a refusal', 405, Client::purgeAllStatus(405, ''));
+
+harness_section('defaults');harness_section('defaults');
 
 putenv('SHOPCLASS_PURGE_ENDPOINT');
 putenv('SHOPCLASS_PURGE_HOST');

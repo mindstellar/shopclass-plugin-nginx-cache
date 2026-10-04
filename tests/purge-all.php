@@ -111,9 +111,10 @@ pin('exactly one PURGE is sent', 1, Client::$purgeAllCalls);
 pin('...and nothing per URL', array(), Client::$calls);
 pin('the queue is superseded', array(), Queue::load());
 
-foreach (array(404, 412) as $status) {
+foreach (array(404, 412, Client::UNCONFIRMED) as $status) {
     fresh($status);
-    check($status . ' means the zone was already empty', Purge::onPurgeAll());
+    check($status . ' is not proof the zone was cleared', !Purge::onPurgeAll());
+    check($status . ': ...so purge-everything is queued', isset(Queue::load()[Queue::EVERYTHING]));
 }
 
 harness_section('URLs collected earlier in the request go with it');

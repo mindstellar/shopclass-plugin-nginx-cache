@@ -445,6 +445,13 @@ class Plugin
         }
         osc_csrf_check();
 
+        if (!osc_is_admin_user_logged_in() || osc_is_moderator()) {
+            osc_add_flash_error_message(__('Only an administrator can change nginx Cache.', 'nginx-cache'), 'admin');
+            osc_redirect_to(osc_route_admin_url('nginx-cache-settings'));
+
+            return;
+        }
+
         $tooLong = self::askedForTooLong();
         self::persistSettings();
 
@@ -470,9 +477,7 @@ class Plugin
                 break;
 
             case 'purge_all':
-                if (!osc_is_admin_user_logged_in() || osc_is_moderator()) {
-                    osc_add_flash_error_message(__('Only an administrator can purge everything.', 'nginx-cache'), 'admin');
-                } elseif (Purge::onPurgeAll(array('admin'))) {
+                if (Purge::onPurgeAll(array('admin'))) {
                     osc_add_flash_ok_message(__('Everything in the cache was purged.', 'nginx-cache'), 'admin');
                 } else {
                     osc_add_flash_warning_message(__('nginx would not purge everything, so only the pages the plugin can name were purged. The rest is queued for the next cron run. Add the purge-all line from Setup.', 'nginx-cache'), 'admin');

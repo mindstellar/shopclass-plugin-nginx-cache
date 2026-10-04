@@ -286,17 +286,20 @@ pin('one purge-all is sent', 1, Client::$purgeAllCalls);
 pin('it says so', 'ok', $GLOBALS['flash'][0][0] ?? '');
 pin('...and the queue it superseded is empty', array(), Queue::load());
 
-stored();
-$GLOBALS['moderator'] = true;
-Params::$values   = form('purge_all');
-$GLOBALS['flash'] = array();
-Client::reset();
-try {
-    Plugin::handleAdminPost();
-} catch (RuntimeException $e) {
+harness_section('only an administrator may use the form');
+
+foreach (array('save', 'test', 'purge_all', 'retry_queue') as $action) {
+    stored();
+    $GLOBALS['moderator'] = true;
+    $GLOBALS['csrfChecked'] = false;
+    $to = submit(form($action, array('ttl_item' => '900', 'purge_host' => 'other.example')));
+    check($action . ': the token is still checked first', $GLOBALS['csrfChecked'] === true);
+    pin($action . ': a moderator saves nothing', '3600', pref('ttl_item'));
+    pin($action . ': ...nor the host', 'shop.example', pref('purge_host'));
+    pin($action . ': ...sends nothing', array(0, array()), array(Client::$purgeAllCalls, Client::$calls));
+    pin($action . ': ...and is told', 'error', $GLOBALS['flash'][0][0] ?? '');
+    check($action . ': ...back on the settings page', strpos($to, 'nginx-cache-settings') !== false, $to);
 }
-pin('a moderator cannot', 0, Client::$purgeAllCalls);
-pin('...and is told', 'error', $GLOBALS['flash'][0][0] ?? '');
 $GLOBALS['moderator'] = false;
 
 exit(harness_result());

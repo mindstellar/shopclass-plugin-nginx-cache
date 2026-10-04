@@ -15,6 +15,8 @@ class Client
 {
     public const NOT_CACHED = 412;
 
+    public const UNCONFIRMED = -1;
+
     /** @var string[] */
     public static $calls = array();
 
@@ -45,7 +47,7 @@ class Client
 
     public static function purgeAllSettled(int $status): bool
     {
-        return $status === 200 || $status === 404 || $status === self::NOT_CACHED;
+        return $status === 200;
     }
 
     public static function isSettled(int $status): bool

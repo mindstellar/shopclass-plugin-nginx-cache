@@ -79,6 +79,17 @@ pin('capped', Queue::CAP, count($entries));
 check('the oldest went first', !isset($entries['https://example.test/0']));
 check('...and the newest is still there', isset($entries['https://example.test/' . (Queue::CAP + 4)]));
 
+seed(array());
+Queue::add('https://example.test/early');
+Queue::add(Queue::EVERYTHING);
+for ($i = 0; $i < Queue::CAP + 5; $i++) {
+    Queue::add('https://example.test/later' . $i);
+}
+$entries = Queue::load();
+check('the purge-everything entry survives the cap', isset($entries[Queue::EVERYTHING]));
+pin('...and is kept first', Queue::EVERYTHING, array_key_first($entries));
+pin('...within the cap', Queue::CAP, count($entries));
+
 harness_section('what comes out');
 
 $now = time();

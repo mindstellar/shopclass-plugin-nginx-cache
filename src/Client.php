@@ -41,6 +41,9 @@ class Client
     /** nginx answers a purge for an entry it does not hold with 412, not 404. */
     public const NOT_CACHED = 412;
 
+    /** A 2xx purge-all answer that did not come from the purge module. */
+    public const UNCONFIRMED = -1;
+
     /** The endpoint is the local origin. Anything slow here is something being wrong. */
     private const TIMEOUT = 3;
 
@@ -177,7 +180,20 @@ class Client
             return 0;
         }
 
-        return self::request('PURGE', $target, (string) (Plugin::purgeHosts()[0] ?? ''));
+        try {
+            $response = HttpClient::create(array('verify_peer' => false, 'verify_host' => false))
+                ->request('PURGE', $target, array(
+                    'headers'       => array('Host' => (string) (Plugin::purgeHosts()[0] ?? '')),
+                    'timeout'       => self::TIMEOUT,
+                    'max_redirects' => 0,
+                ));
+
+            $status = $response->getStatusCode();
+
+            return self::purgeAllStatus($status, $status < 300 ? $response->getContent(false) : '');
+        } catch (Throwable $e) {
+            return 0;
+        }
     }
 
     /** Where the purge-all request goes: the endpoint's origin, then /index.php. */
@@ -189,12 +205,30 @@ class Client
     }
 
     /**
-     * Whether a purge-all answer means the zone is clear. 404 and 412 are the module's
-     * answers for an empty zone; a PURGE that reaches PHP instead is refused with 405.
+     * A purge-all answer, checked against the purge module's own body.
+     *
+     * The module answers purge_all with 200 (202 when it queues the work) and a body
+     * saying "Status: purged" or "queued" (2.x said "Successful purge"). A 2xx without
+     * that came from somewhere else, such as PHP rendering the page, and proves nothing.
+     *
+     * @return int 200 when the module confirmed it, UNCONFIRMED for any other 2xx, else the status
      */
+    public static function purgeAllStatus(int $status, string $body): int
+    {
+        if ($status !== 200 && $status !== 202) {
+            return $status;
+        }
+
+        $confirmed = strpos($body, 'Successful purge') !== false
+            || preg_match('~Status\W{0,4}(purged|queued)\b~i', $body) === 1;
+
+        return $confirmed ? 200 : self::UNCONFIRMED;
+    }
+
+    /** Only a purge the module confirmed clears the zone. */
     public static function purgeAllSettled(int $status): bool
     {
-        return $status === 200 || $status === 404 || $status === self::NOT_CACHED;
+        return $status === 200;
     }
 
     /** @return int HTTP status, 0 when the request never completed */
