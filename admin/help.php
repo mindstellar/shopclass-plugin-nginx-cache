@@ -97,7 +97,7 @@ $step = static function ($n, $title, $lead, $code) use ($e) {
   <?php $step(
       5,
       __('Turn caching on for PHP', 'nginx-cache'),
-      __('Inside the existing "location ~ \\.php$", alongside its fastcgi_pass. X-Cache is not decoration: Test purge reads it to tell "cached, then purged" from "never cached", and refuses to lengthen anything without it.', 'nginx-cache'),
+      __('Inside the existing "location ~ \\.php$", alongside its fastcgi_pass. X-Cache is not decoration: Test purge reads it to tell "cached, then purged" from "never cached", and refuses to lengthen anything without it. The last line lets one PURGE from PHP clear the whole cache when the theme, a plugin or a setting changes; without it those changes clear only the pages the plugin can name.', 'nginx-cache'),
       Setup::phpScope()
   ); ?>
 

@@ -65,6 +65,16 @@ Not purged, and so left on core's short window:
 The rule behind all three: a page is held longer only when the URL being served is the one
 a purge will name.
 
+**Site-wide changes purge everything.** A theme switch, a plugin enabled or disabled, or a
+settings, maintenance, language, currency, widget, category or page change can touch every
+page. For those the plugin sends one `PURGE /index.php` to the origin of the purge
+endpoint, and the `purge_all` line from Setup clears the whole zone. If nginx refuses it,
+the plugin purges what it can name (home, every enabled category, static pages, the
+sitemap) and queues a purge-everything retry for the next cron run. **Purge everything
+now** on the settings page does the same by hand.
+
+On the Shopclass Docker image 6.4.2+ with `OSC_MICROCACHE=1` nothing extra is needed.
+
 ## Events it listens to
 
 The set the Cloudflare plugin uses, which is the tested list of what core actually fires,
@@ -76,6 +86,10 @@ plus one more:
 `after_delete_page`, and **`invalidate_item_cache`**.
 
 The last one (6.2.0+) fires when a storage offload moves a listing's images.
+
+For purge-everything: **`page_cache_purge`**, which core 6.4.2+ fires once per request for
+every site-wide change. On older cores the plugin listens to `theme_activate`,
+`after_plugin_activate`, `after_plugin_deactivate` and `admin_form_after_save` instead.
 
 ## Relationship to the Cloudflare plugin
 
@@ -99,6 +113,9 @@ Both halves of the endpoint matter and neither is obvious: the request must reac
 origin **and** present the host and scheme the cache key was built with. **Test purge**
 proves that combination rather than trusting it, and changing either setting closes the
 gate again.
+
+Test purge also proves purge-everything, and stores the result in `purge_all_ok`. That
+does not gate the longer windows; the settings page warns until it passes.
 
 **List every hostname the site answers on.** nginx files a separate copy of each page
 under each `Host` it was asked with, so a name left out goes on serving what it already

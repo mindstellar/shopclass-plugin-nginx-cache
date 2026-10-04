@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+### New
+- Purges the whole cache on core's `page_cache_purge` (theme, plugin and settings changes).
+- **Purge everything now** button on the settings page.
+
+### Changed
+- Test purge also proves purge-everything.
+
 ## 0.4.1
 
 ### Changed
