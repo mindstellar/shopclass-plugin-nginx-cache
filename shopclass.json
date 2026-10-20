@@ -2,6 +2,7 @@
   "$schema": "../schema/package.schema.json",
   "slug": "nginx-cache",
   "type": "plugin",
+  "modes": ["classifieds", "shop"],
   "categories": [
     "admin-tools"
   ],

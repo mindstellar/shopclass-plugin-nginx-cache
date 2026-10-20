@@ -11,6 +11,7 @@ Requires Shopclass: 6.2.0
 Tested up to: 6.4
 Requires PHP: 8.0
 Support URI: https://github.com/mindstellar/shopclass-plugin-nginx-cache/issues
+Modes: classifieds, shop
 */
 
 /*
