@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.4
+
+### Fixed
+- The cache bypass cookie list now includes `oc_theme` and `oc_admin_browsing`, and follows core's list.
+
 ## 0.5.3
 
 ### Changed

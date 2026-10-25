@@ -124,4 +124,11 @@ check('same purge key', strpos($conf, Setup::purgeKey()) !== false);
 check('same zone', strpos($conf, Setup::ZONE) !== false);
 check('same load_module line', strpos($conf, Setup::loadModule()) !== false);
 
+/* The cookie map must bypass on every cookie core calls personal. */
+$scope = Setup::httpScope();
+foreach (array('oc_cache_bypass', 'oc_userLocale', 'oc_theme', 'oc_admin_browsing', 'osclass', 'PHPSESSID') as $cookie) {
+    check('the cookie map lists ' . $cookie, strpos($scope, $cookie) !== false);
+    check('...and so does the reference file: ' . $cookie, strpos($conf, $cookie) !== false);
+}
+
 exit(harness_result());

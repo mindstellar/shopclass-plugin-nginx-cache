@@ -89,9 +89,25 @@ DOCKER;
         return 'load_module modules/ngx_http_cache_purge_module.so;';
     }
 
+    /** Cookies that make a page personal. Core's list when it has one, so the two cannot drift. */
+    public const COOKIES = array('oc_cache_bypass', 'oc_userLocale', 'oc_theme', 'oc_admin_browsing', 'osclass', 'PHPSESSID');
+
+    /** @return string[] */
+    public static function privateCookies(): array
+    {
+        $names = self::COOKIES;
+        if (function_exists('osc_cache_relevant_cookies')) {
+            $names = array_merge($names, (array) osc_cache_relevant_cookies());
+        }
+        $names = array_filter(array_unique($names), static fn ($n) => is_string($n) && preg_match('/^[A-Za-z0-9_.-]+$/', $n));
+
+        return array_values($names);
+    }
+
     public static function httpScope(): string
     {
         $zone = self::ZONE;
+        $cookies = implode('|', self::privateCookies());
 
         return <<<CONF
 fastcgi_cache_path /var/cache/nginx/microcache levels=1:2 keys_zone={$zone}:10m
@@ -99,7 +115,7 @@ fastcgi_cache_path /var/cache/nginx/microcache levels=1:2 keys_zone={$zone}:10m
 
 map \$http_cookie \$mc_private {
     default 0;
-    "~(^|;\\s*)(oc_cache_bypass|oc_userLocale|osclass|PHPSESSID)=" 1;
+    "~(^|;\\s*)({$cookies})=" 1;
 }
 CONF;
     }
