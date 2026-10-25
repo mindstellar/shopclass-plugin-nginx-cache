@@ -1,155 +1,73 @@
 # nginx Cache
 
-Hold pages in nginx's FastCGI cache for an hour instead of thirty seconds, and purge them
-the moment a listing changes.
+Holds pages in nginx's FastCGI cache for an hour instead of thirty seconds, and purges them when a listing changes. For site owners who run their own nginx.
 
-![nginx Cache settings in the ShopClass admin](assets/screenshot-1.png)
+![nginx Cache settings in the Shopclass admin](assets/screenshot-1.png)
 
-Verified end to end against nginx 1.31.3 with `ngx_cache_purge`.
+## Requirements
+
+- Shopclass 6.2.0 or later (tested up to 6.4)
+- PHP 8.0 or later
+- nginx built with `ngx_cache_purge`. It is not in the official image. It builds as a dynamic module against stock nginx (checked on 1.31.3).
+
+The bundled Shopclass Docker image ships it already configured. A standalone install adds it by hand.
 
 ## Install
 
-From the admin: **Plugins → Manage plugins → Browse**, find *nginx Cache*, then **Install**.
-Or: `php oc-cli.php market:install nginx-cache`. Needs ShopClass 6.2.0 or later (tested up
-to 6.4).
+1. Open Plugins → Browse (or upload the zip from the GitHub release).
+2. Install.
+3. Activate.
 
-## What it is for
+(`php oc-cli.php market:install nginx-cache` also works.)
 
-ShopClass sets `Cache-Control: public, s-maxage=30` on public pages, and nginx honours it.
-Thirty seconds is short because nothing can invalidate an entry, so time is the only
-eviction. That means the origin re-renders every URL every thirty seconds for as long as
-anyone is looking at it.
+## Set up
 
-This plugin lengthens the window and takes responsibility for correctness instead: when a
-listing changes, the pages showing it are purged immediately.
+1. Open Plugins → nginx Cache: Setup. It prints the Dockerfile, the `load_module` line and the purge `location` block for this install. Add them to nginx.
+2. Open Plugins → nginx Cache.
+3. Set *Purge endpoint*: an address this server can open itself, never the site's public URL. Default: `$SHOPCLASS_PURGE_ENDPOINT`, else `<nginx's scheme>://127.0.0.1/purge`.
+4. Set *Host headers*: every hostname visitors use, one per line, port included. Include `www`, aliases and staging names. The site's own host must be in the list.
+5. Optional: set *How long pages are held* (*Listings*, *Static pages*, *Home, category, profile*). Default and maximum are 3600 seconds.
+6. Press *Test purge*. The longer window stays off until the test passes.
 
-What it does **not** buy is page speed: with `use_stale updating` + `background_update on`,
-an expiring entry is already served stale in under a millisecond while it refreshes behind
-the request. The saving is origin renders: one per URL per hour instead of one per thirty
-seconds.
+Where PHP and nginx are separate containers, use the nginx service name as the endpoint, for example `http://webserver/purge`.
 
-## What it requires
+## How it works
 
-nginx built with `ngx_cache_purge`. That module is not in the official image; it builds
-cleanly as a **dynamic** module against current nginx (verified on 1.31.3) in a two-stage
-Dockerfile, which is stock nginx plus one module rather than a switch to OpenResty. The
-plugin's **Setup** page prints the Dockerfile, the `load_module` line and the purge
-`location` block for this install.
+- Core sends `Cache-Control: public, s-maxage=30`. Until the test passes, the plugin keeps that.
+- After a pass, listings, static pages and home, category and profile pages are held up to an hour.
+- When a listing changes, these are purged: the listing (one URL per locale), the home page, its category page and the seller's profile.
+- Site-wide changes purge everything: a theme switch, a plugin enabled or disabled, or a settings, maintenance, language, currency, widget, category or page change.
+- The plugin sends one `PURGE /index.php`. The `purge_all` line from the Setup page clears the whole zone.
+- If nginx refuses, the plugin purges what it can name (home, enabled categories, static pages, the sitemap) and retries from cron. *Purge everything now* on the settings page does the same by hand.
+- On the Docker image 6.4.2+ with `OSC_MICROCACHE=1`, core purges everything itself through `OSC_PAGE_CACHE_PURGE_URL`. The `purge_all` line is not needed.
 
-The bundled ShopClass Docker image ships it preconfigured. A standalone install adds it by
-hand.
+## Notes / limits
 
-## Safety
+- It saves origin renders, not page speed. nginx already serves expiring entries stale while it refreshes.
+- Not purged, so they keep core's short window: search results with parameters, any URL with a query string, and every page when permalinks are off.
+- The test also checks purge-everything and stores the result in `purge_all_ok`. This does not gate the longer windows, but the settings page warns until it passes.
+- The `purge_all` line allows `127.0.0.1` only. If PHP runs in another container, add its address.
+- Keep `set_real_ip_from` to your proxy only. A wider range lets an internet client pass the purge allow list.
+- Times are capped at 3600 seconds. Past that, the form token in a cached page can expire.
+- Works with the Cloudflare plugin, which owns the edge. This one owns the origin.
 
-The longer window is **gated on a self-test**. Until the plugin has primed a URL, purged
-it, and confirmed the entry is gone, it serves core's own thirty seconds. A long window
-with a purge that quietly does not work is worse than no plugin at all. The failure is
-invisible and lasts an hour, so it is not something the plugin will do on trust. The flag
-clears whenever the endpoint or host changes.
+## For developers
 
-## What it purges, and what it does not
+Filters:
 
-Purged, because their URLs can be named: the listing itself and one per locale, the
-homepage, the listing's category page, and the seller's public profile.
+- `nginx_cache_item_urls`: add URLs for a theme's own listing routes.
+- `nginx_cache_purge_urls`: take the whole list and deliver it elsewhere.
 
-Not purged, and so left on core's short window:
+Hooks it listens to: `posted_item`, `edited_item`, `after_delete_item`, `enable_item`, `disable_item`, `activate_item`, `deactivate_item`, `item_premium_on`, `item_premium_off`, `item_expiration_updated`, `invalidate_item_cache` (6.2.0+), `add_category`, `after_delete_category`, `edit_page`, `after_delete_page`.
 
-- **search results carrying parameters**: every keyword, filter, sort and page number is
-  its own cache entry, the set cannot be enumerated, and a newly posted listing has to
-  appear in them;
-- **any URL with a query string**, including `?comments-page=2` on a listing and
-  `?utm_source=…` on the home page. Each is a separate cache entry that no purge names;
-- **every page, if permalinks are off**, since the canonical URL of each is then a query
-  URL itself.
+For purge-everything it uses `page_cache_purge` (core 6.4.2+). On older cores it uses `theme_activate`, `after_plugin_activate`, `after_plugin_deactivate` and `admin_form_after_save`, so any admin settings save purges everything on cores 6.2 to 6.4.1.
 
-The rule behind all three: a page is held longer only when the URL being served is the one
-a purge will name.
+Settings are stored in the `nginx_cache` section: `purge_endpoint`, `purge_host`, `ttl_item`, `ttl_page`, `ttl_aggregate`. The nginx config is also in [`nginx/shopclass-cache.conf`](nginx/shopclass-cache.conf).
 
-**Site-wide changes purge everything.** A theme switch, a plugin enabled or disabled, or a
-settings, maintenance, language, currency, widget, category or page change can touch every
-page. For those the plugin sends one `PURGE /index.php` to the origin of the purge
-endpoint, and the `purge_all` line from Setup clears the whole zone. If nginx refuses it,
-the plugin purges what it can name (home, every enabled category, static pages, the
-sitemap) and queues a purge-everything retry for the next cron run. **Purge everything
-now** on the settings page does the same by hand.
+## Support
 
-On the Shopclass Docker image 6.4.2+ with `OSC_MICROCACHE=1`, core purges everything itself
-through `OSC_PAGE_CACHE_PURGE_URL`. The plugin's own purge-all request is skipped, no
-fallback or queued retry is made, and the `purge_all` line is not needed. **Purge
-everything now** asks core, which clears the cache at the end of the request. Older cores
-and other installs work as described above. On Shopclass 6.4.3+ this also holds for cron and CLI commands in the image.
+https://github.com/mindstellar/shopclass-plugin-nginx-cache/issues
 
-The `purge_all` line allows `127.0.0.1` only. Where PHP runs in another container, add
-that container's address to it by hand.
+## License
 
-**Narrow `set_real_ip_from` to your proxy.** With `real_ip` reading `X-Forwarded-For`, nginx
-checks the allow list against the forwarded address. If `set_real_ip_from` trusts more than
-the proxy itself, an internet client can claim `127.0.0.1` or a private address and pass
-the allow list on both the purge location and the `purge_all` line.
-
-## Events it listens to
-
-The set the Cloudflare plugin uses, which is the tested list of what core actually fires,
-plus one more:
-
-`posted_item`, `edited_item`, `after_delete_item`, `enable_item`, `disable_item`,
-`activate_item`, `deactivate_item`, `item_premium_on`, `item_premium_off`,
-`item_expiration_updated`, `add_category`, `after_delete_category`, `edit_page`,
-`after_delete_page`, and **`invalidate_item_cache`**.
-
-The last one (6.2.0+) fires when a storage offload moves a listing's images.
-
-For purge-everything: **`page_cache_purge`**, which core 6.4.2+ fires once per request for
-every site-wide change. On older cores the plugin listens to `theme_activate`,
-`after_plugin_activate`, `after_plugin_deactivate` and `admin_form_after_save` instead.
-So on cores 6.2 to 6.4.1, any admin settings save purges the whole cache.
-
-## Relationship to the Cloudflare plugin
-
-They compose. `shopclass-plugin-cloudflare` owns the edge; this owns the origin. Both hang
-off the same core hooks and share no code. Run either or both.
-
-## Configuration
-
-Two pages under **Plugins**: the settings, and a **Setup** page that prints the nginx
-configuration this install needs (its own host, its own scheme, its own nginx version)
-rather than a sample to adapt. The same config is in
-[`nginx/shopclass-cache.conf`](nginx/shopclass-cache.conf) for reading outside the admin.
-
-| Preference (`nginx_cache` section) | Default |
-|---|---|
-| `purge_endpoint` | `$SHOPCLASS_PURGE_ENDPOINT`, else `<nginx's scheme>://127.0.0.1/purge` |
-| `purge_host` | `$SHOPCLASS_PURGE_HOST`, else the site's host and port. One per line, see below |
-| `ttl_item`, `ttl_page`, `ttl_aggregate` | 3600, capped at 3600 |
-
-Both halves of the endpoint matter and neither is obvious: the request must reach the
-origin **and** present the host and scheme the cache key was built with. **Test purge**
-proves that combination rather than trusting it, and changing either setting closes the
-gate again.
-
-Test purge also proves purge-everything, and stores the result in `purge_all_ok`. That
-does not gate the longer windows; the settings page warns until it passes. Where core
-handles purge-everything (Docker image), the probe is skipped and the result is set to passed.
-
-**List every hostname the site answers on.** nginx files a separate copy of each page
-under each `Host` it was asked with, so a name left out goes on serving what it already
-had for the whole window: `www.example.com` when the site is configured as
-`example.com`, an alias, a staging domain. Test purge primes and purges each one in turn,
-because priming with `Host: X` files an entry under X and can therefore prove it. The one
-thing it cannot prove is that those names are what visitors send, so it requires the
-site's own host to be among them: a list of typos would otherwise verify itself perfectly
-and purge nothing anybody reads.
-
-Times are capped at 3600 seconds. Past that, the form token in a cached page can expire
-before a visitor submits the form.
-
-## Extending
-
-| Filter | Purpose |
-|---|---|
-| `nginx_cache_item_urls` | add URLs for a theme's own item routes |
-| `nginx_cache_purge_urls` | take the whole list and deliver it somewhere else |
-
-## Licence
-
-GPL-3.0-or-later. © Navjot Tomer (Mindstellar) and contributors.
+GPL-3.0-or-later
