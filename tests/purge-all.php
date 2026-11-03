@@ -53,7 +53,7 @@ function osc_set_preference($key, $value = '', $section = 'osclass', $type = 'ST
 
 class Category
 {
-    public static function newInstance()
+    public static function getInstance()
     {
         return new self();
     }
@@ -66,7 +66,7 @@ class Category
 
 class Page
 {
-    public static function newInstance()
+    public static function getInstance()
     {
         return new self();
     }

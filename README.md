@@ -6,7 +6,7 @@ Holds pages in nginx's FastCGI cache for an hour instead of thirty seconds, and 
 
 ## Requirements
 
-- Shopclass 6.2.0 or later (tested up to 6.4)
+- Shopclass 7.0.0 or later
 - PHP 8.0 or later
 - nginx built with `ngx_cache_purge`. It is not in the official image. It builds as a dynamic module against stock nginx (checked on 1.31.3).
 

@@ -136,13 +136,13 @@ class Purge
     {
         $urls = array(osc_base_url());
 
-        foreach (Category::newInstance()->listEnabled() as $category) {
+        foreach (Category::getInstance()->listEnabled() as $category) {
             if (!empty($category['pk_i_id'])) {
                 $urls[] = osc_search_url(array('sCategory' => (int) $category['pk_i_id']));
             }
         }
 
-        foreach (Page::newInstance()->listAll(0) as $page) {
+        foreach (Page::getInstance()->listAll(0) as $page) {
             $urls = array_merge($urls, self::pageUrlsFor((array) $page));
         }
 
@@ -268,7 +268,7 @@ class Purge
      */
     private static function pageUrls(int $id): array
     {
-        $page = Page::newInstance()->findByPrimaryKey($id);
+        $page = Page::getInstance()->findByPrimaryKey($id);
 
         return is_array($page) ? self::pageUrlsFor($page) : array();
     }
@@ -309,7 +309,7 @@ class Purge
             return null;
         }
 
-        $item = Item::newInstance()->findByPrimaryKey($id);
+        $item = Item::getInstance()->findByPrimaryKey($id);
 
         return (is_array($item) && $item !== array()) ? $item : null;
     }
