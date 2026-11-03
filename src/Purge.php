@@ -32,38 +32,6 @@ class Purge
     /** @var array<string, true> URLs collected this request, de-duplicated by key. */
     private static $pending = array();
 
-    /** Set by the hooks older cores fire instead of page_cache_purge; flushed once. */
-    private static $purgeAllRequested = false;
-
-    /** Core events that clear the whole cache when core itself does not signal them. */
-    public const LEGACY_HOOKS = array(
-        'theme_activate',
-        'after_plugin_activate',
-        'after_plugin_deactivate',
-        'admin_form_after_save',
-    );
-
-    /**
-     * The hooks that lead to a purge of everything.
-     *
-     * Cores with osc_purge_page_cache() fire page_cache_purge once per request for every
-     * site-wide change. Older ones do not, so the plugin listens to the main ones itself;
-     * doing both would purge twice.
-     *
-     * @return array<string, callable> hook => callback
-     */
-    public static function purgeAllHooks(bool $coreSignals): array
-    {
-        $hooks = array('page_cache_purge' => array(self::class, 'onPurgeAll'));
-        if (!$coreSignals) {
-            foreach (self::LEGACY_HOOKS as $hook) {
-                $hooks[$hook] = array(self::class, 'requestPurgeAll');
-            }
-        }
-
-        return $hooks;
-    }
-
     /** A PURGE that reached PHP means nginx has no purge_all line; refuse it with 405. */
     public static function isStrayPurge(string $method): bool
     {
@@ -71,20 +39,12 @@ class Purge
     }
 
     /**
-     * Whether core clears the whole cache itself: the Docker image 6.4.2+ with
-     * OSC_MICROCACHE=1 sends one PURGE to a loopback server that has a purge_all rule.
-     * Core 6.4.3+ derives that address itself, so cron and CLI see it too.
+     * Whether core clears the whole cache itself: with OSC_MICROCACHE=1 the Docker image
+     * sends one PURGE to a loopback server that has a purge_all rule.
      */
     public static function coreHandlesPurgeAll(): bool
     {
-        if (!function_exists('osc_purge_page_cache')) {
-            return false;
-        }
-        $url = function_exists('osc_page_cache_purge_url')
-            ? osc_page_cache_purge_url()
-            : (string) getenv('OSC_PAGE_CACHE_PURGE_URL');
-
-        return $url !== '';
+        return osc_page_cache_purge_url() !== '';
     }
 
     /**
@@ -120,12 +80,6 @@ class Purge
         return false;
     }
 
-    /** @param mixed ...$args whatever the legacy hook passes */
-    public static function requestPurgeAll(...$args): void
-    {
-        self::$purgeAllRequested = true;
-    }
-
     /**
      * The pages a site-wide change touches that have a URL a purge can name: home, every
      * enabled category, every static page (not the e-mail templates) and the sitemap.
@@ -146,8 +100,7 @@ class Purge
             $urls = array_merge($urls, self::pageUrlsFor((array) $page));
         }
 
-        if (function_exists('osc_sitemap_robots_line')
-            && preg_match('~^Sitemap:\s*(\S+)~', (string) osc_sitemap_robots_line(), $m)) {
+        if (preg_match('~^Sitemap:\s*(\S+)~', (string) osc_sitemap_robots_line(), $m)) {
             $urls[] = $m[1];
         }
 
@@ -351,13 +304,6 @@ class Purge
 
     public static function flush(): void
     {
-        if (self::$purgeAllRequested) {
-            self::$purgeAllRequested = false;
-            if (self::onPurgeAll(array('legacy'))) {
-                return;
-            }
-        }
-
         if (self::$pending === array()) {
             return;
         }

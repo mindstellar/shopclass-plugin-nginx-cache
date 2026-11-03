@@ -34,6 +34,10 @@ function osc_get_bool_preference($key, $section = 'osclass')
 {
     return ($GLOBALS['prefs'][$section][$key] ?? '') === '1';
 }
+function osc_page_cache_purge_url(): string
+{
+    return (string) getenv('OSC_PAGE_CACHE_PURGE_URL');
+}
 function osc_purge_page_cache(string $reason = ''): void
 {
     $GLOBALS['purgeRequested'][] = $reason;

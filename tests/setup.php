@@ -27,6 +27,10 @@ function osc_base_url($withIndex = false)
 {
     return 'https://shop.example/';
 }
+function osc_cache_relevant_cookies()
+{
+    return array('oc_extra');
+}
 function __($s, $domain = '')
 {
     return $s;
@@ -130,5 +134,6 @@ foreach (array('oc_cache_bypass', 'oc_userLocale', 'oc_theme', 'oc_admin_browsin
     check('the cookie map lists ' . $cookie, strpos($scope, $cookie) !== false);
     check('...and so does the reference file: ' . $cookie, strpos($conf, $cookie) !== false);
 }
+check("core's own cookie list is added", strpos($scope, 'oc_extra') !== false);
 
 exit(harness_result());

@@ -49,6 +49,10 @@ require_once ABS_PATH . 'src/Plugin.php';
 require_once ABS_PATH . 'src/Purge.php';
 require_once __DIR__ . '/lib/harness.php';
 
+function osc_page_cache_purge_url(): string
+{
+    return (string) getenv('OSC_PAGE_CACHE_PURGE_URL');
+}
 function osc_purge_page_cache(string $reason = ''): void
 {
 }

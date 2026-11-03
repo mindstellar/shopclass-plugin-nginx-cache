@@ -39,7 +39,7 @@ Where PHP and nginx are separate containers, use the nginx service name as the e
 - Site-wide changes purge everything: a theme switch, a plugin enabled or disabled, or a settings, maintenance, language, currency, widget, category or page change.
 - The plugin sends one `PURGE /index.php`. The `purge_all` line from the Setup page clears the whole zone.
 - If nginx refuses, the plugin purges what it can name (home, enabled categories, static pages, the sitemap) and retries from cron. *Purge everything now* on the settings page does the same by hand.
-- On the Docker image 6.4.2+ with `OSC_MICROCACHE=1`, core purges everything itself through `OSC_PAGE_CACHE_PURGE_URL`. The `purge_all` line is not needed.
+- On the Docker image with `OSC_MICROCACHE=1`, core purges everything itself through `OSC_PAGE_CACHE_PURGE_URL`. The `purge_all` line is not needed.
 
 ## Notes / limits
 
@@ -58,9 +58,9 @@ Filters:
 - `nginx_cache_item_urls`: add URLs for a theme's own listing routes.
 - `nginx_cache_purge_urls`: take the whole list and deliver it elsewhere.
 
-Hooks it listens to: `posted_item`, `edited_item`, `after_delete_item`, `enable_item`, `disable_item`, `activate_item`, `deactivate_item`, `item_premium_on`, `item_premium_off`, `item_expiration_updated`, `invalidate_item_cache` (6.2.0+), `add_category`, `after_delete_category`, `edit_page`, `after_delete_page`.
+Hooks it listens to: `posted_item`, `edited_item`, `after_delete_item`, `enable_item`, `disable_item`, `activate_item`, `deactivate_item`, `item_premium_on`, `item_premium_off`, `item_expiration_updated`, `invalidate_item_cache`, `add_category`, `after_delete_category`, `edit_page`, `after_delete_page`.
 
-For purge-everything it uses `page_cache_purge` (core 6.4.2+). On older cores it uses `theme_activate`, `after_plugin_activate`, `after_plugin_deactivate` and `admin_form_after_save`, so any admin settings save purges everything on cores 6.2 to 6.4.1.
+For purge-everything it uses `page_cache_purge`.
 
 Settings are stored in the `nginx_cache` section: `purge_endpoint`, `purge_host`, `ttl_item`, `ttl_page`, `ttl_aggregate`. The nginx config is also in [`nginx/shopclass-cache.conf`](nginx/shopclass-cache.conf).
 

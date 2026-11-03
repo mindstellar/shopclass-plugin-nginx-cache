@@ -34,6 +34,10 @@ function osc_sitemap_robots_line()
 {
     return 'Sitemap: https://example.test/sitemapindex.xml';
 }
+function osc_page_cache_purge_url(): string
+{
+    return (string) getenv('OSC_PAGE_CACHE_PURGE_URL');
+}
 function osc_apply_filter($hook, $content, ...$args)
 {
     return $content;
@@ -147,41 +151,13 @@ foreach (array(
 pin('...each once', count(array_unique($sent)), count($sent));
 pin('static pages exclude the e-mail templates', 0, $GLOBALS['pageListArg']);
 
-harness_section('older cores: their hooks ask once, shutdown purges once');
-
-fresh(200);
-Purge::requestPurgeAll('bender');
-Purge::requestPurgeAll();
-Purge::collect(array('https://example.test/x'));
-Purge::flush();
-pin('two events, one PURGE', 1, Client::$purgeAllCalls);
-pin('...and the pending URL is dropped', array(), Client::$calls);
-Purge::flush();
-pin('a second flush sends nothing more', 1, Client::$purgeAllCalls);
-
-harness_section('which hooks lead to a purge of everything');
-
-$withCore = Purge::purgeAllHooks(true);
-pin('a core that signals: page_cache_purge only', array('page_cache_purge'), array_keys($withCore));
-pin('...handled by onPurgeAll', array(Purge::class, 'onPurgeAll'), $withCore['page_cache_purge']);
-
-$old = Purge::purgeAllHooks(false);
-pin('an older core: the shim hooks as well',
-    array('page_cache_purge', 'theme_activate', 'after_plugin_activate', 'after_plugin_deactivate', 'admin_form_after_save'),
-    array_keys($old));
-pin('...which only ask for a purge at shutdown', array(Purge::class, 'requestPurgeAll'), $old['theme_activate']);
-
 harness_section('core purges everything itself (Docker image)');
-
-function osc_purge_page_cache(string $reason = ''): void
-{
-}
 
 $had = getenv('OSC_PAGE_CACHE_PURGE_URL');
 putenv('OSC_PAGE_CACHE_PURGE_URL');
 check('no URL in the environment: not handled by core', !Purge::coreHandlesPurgeAll());
 putenv('OSC_PAGE_CACHE_PURGE_URL=http://127.0.0.1:8089/');
-check('URL set and core function present: handled by core', Purge::coreHandlesPurgeAll());
+check('URL set: handled by core', Purge::coreHandlesPurgeAll());
 
 fresh(200, array(Queue::EVERYTHING => time(), 'https://example.test/old' => time()));
 Purge::collect(array('https://example.test/x'));
@@ -197,23 +173,6 @@ fresh(403);
 check('without the URL it is unchanged: not cleared', !Purge::onPurgeAll(array('theme')));
 pin('...and purge-all is tried', 1, Client::$purgeAllCalls);
 check('...and queued', isset(Queue::load()[Queue::EVERYTHING]));
-if ($had !== false) {
-    putenv('OSC_PAGE_CACHE_PURGE_URL=' . $had);
-}
-
-// Defined here, not at the top of the file: a top-level function exists before line 1 runs.
-if (!function_exists('osc_page_cache_purge_url')) {
-    function osc_page_cache_purge_url(): string
-    {
-        return (string) ($GLOBALS['helperUrl'] ?? '');
-    }
-}
-
-putenv('OSC_PAGE_CACHE_PURGE_URL');
-$GLOBALS['helperUrl'] = 'http://127.0.0.1:8089/';
-check('helper returns a URL, env unset: handled by core', Purge::coreHandlesPurgeAll());
-$GLOBALS['helperUrl'] = '';
-check('helper returns nothing: not handled by core', !Purge::coreHandlesPurgeAll());
 if ($had !== false) {
     putenv('OSC_PAGE_CACHE_PURGE_URL=' . $had);
 }

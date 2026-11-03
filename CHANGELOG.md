@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1
+
+### Changed
+- The fallback for cores older than 7.0 is removed.
+
 ## 0.6.0
 
 ### Changed
